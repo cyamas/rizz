@@ -64,11 +64,31 @@ func (d *Display) SetRune(r rune) {
 	if r == '\t' {
 		lastCursor.x += 7
 	}
-	d.Screen.SetContent(lastCursor.x, lastCursor.y, r, []rune{}, d.Style)
-	d.Screen.Show()
 	d.CurrBuf.addRune(r)
+	d.reRenderLine()
 	lastCursor.x++
 	d.Screen.ShowCursor(lastCursor.x, lastCursor.y)
+	d.Screen.Show()
+}
+
+func (d *Display) handleBackspace() {
+	if lastCursor.x == 0 {
+		if lastCursor.y == 0 {
+			return
+		}
+		lastCursor.y--
+		lastCursor.x = d.CurrBuf.currLineLength()
+		return
+	}
+	r := d.CurrBuf.extractPrevRune()
+	d.Screen.SetContent(lastCursor.x-1, lastCursor.y, ' ', []rune{}, d.Style)
+	if r == '\t' {
+		lastCursor.x -= 7
+	}
+	lastCursor.x--
+	d.reRenderLine()
+	d.Screen.ShowCursor(lastCursor.x, lastCursor.y)
+	d.Screen.Show()
 }
 
 func (d *Display) reRenderLine() {
@@ -281,18 +301,14 @@ func (d *Display) runInsertMode() {
 				lastCursor.x = 0
 				lastCursor.y++
 				d.Screen.ShowCursor(lastCursor.x, lastCursor.y)
+				d.Screen.Show()
 			case ev.Key() == tcell.KeyBackspace2:
 				d.handleBackspace()
-				d.reRenderLine()
-				d.Screen.ShowCursor(lastCursor.x, lastCursor.y)
 			default:
 				d.SetRune(ev.Rune())
-				d.Screen.ShowCursor(lastCursor.x, lastCursor.y)
 
 			}
 		}
-		d.Screen.Show()
-		d.Screen.ShowCursor(lastCursor.x, lastCursor.y)
 	}
 }
 
@@ -310,23 +326,6 @@ func (b *Buffer) addRune(r rune) {
 	for i := len(line.runes) - 1; i > line.currRuneIndex(); i-- {
 		line.runes[i], line.runes[i-1] = line.runes[i-1], line.runes[i]
 	}
-}
-
-func (d *Display) handleBackspace() {
-	if lastCursor.x == 0 {
-		if lastCursor.y == 0 {
-			return
-		}
-		lastCursor.y--
-		lastCursor.x = d.CurrBuf.currLineLength()
-		return
-	}
-	r := d.CurrBuf.extractPrevRune()
-	d.Screen.SetContent(lastCursor.x-1, lastCursor.y, ' ', []rune{}, d.Style)
-	if r == '\t' {
-		lastCursor.x -= 7
-	}
-	lastCursor.x--
 }
 
 func (b *Buffer) extractPrevRune() rune {
