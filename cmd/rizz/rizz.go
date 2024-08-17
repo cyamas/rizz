@@ -48,69 +48,145 @@ func (d *Display) displayCurrentBuffer() {
 	for _, line := range buf.content.lines {
 		for _, r := range line.runes {
 			if r == '\t' {
-				readKeyTab()
+				cur.x += 7
 			}
-			d.Screen.SetContent(lastCursor.x, lastCursor.y, r, []rune{}, d.Style)
-			lastCursor.x++
+			d.Screen.SetContent(cur.x, cur.y, r, []rune{}, d.Style)
+			cur.x++
 		}
-		lastCursor.x = 0
-		lastCursor.y++
+		cur.x = 0
+		cur.y++
 	}
-	lastCursor.x = 0
-	lastCursor.y = 0
+	cur.x = 0
+	cur.y = 0
 }
 
 func (d *Display) SetRune(r rune) {
 	if r == '\t' {
-		lastCursor.x += 7
+		cur.x += 7
 	}
 	d.CurrBuf.addRune(r)
-	d.reRenderLine()
-	lastCursor.x++
-	d.Screen.ShowCursor(lastCursor.x, lastCursor.y)
+	d.reRenderLineAtCursor()
+	cur.x++
+	d.Screen.ShowCursor(cur.x, cur.y)
 	d.Screen.Show()
 }
 
-func (d *Display) handleBackspace() {
-	if lastCursor.x == 0 {
-		if lastCursor.y == 0 {
+func (d *Display) handleKeyEnter() {
+	d.shiftLinesDown()
+	cur.x = 0
+	cur.y++
+	d.CurrBuf.content.IncrementLength()
+	d.Screen.ShowCursor(cur.x, cur.y)
+	d.Screen.Show()
+}
+
+func (d *Display) shiftLinesDown() {
+	content := d.CurrBuf.content
+	numLines := content.Length()
+	line := content.lines[cur.y]
+	extracted := line.extractRestOfLine(d)
+	d.reRenderLine(cur.y)
+
+	for i := cur.y + 1; i <= numLines; i++ {
+		content.lines[i].runes, extracted = extracted, content.lines[i].runes
+		d.reRenderLine(i)
+		content.lines[i].setLengthAndTabs()
+	}
+}
+
+func (l *Line) extractRestOfLine(d *Display) []rune {
+	currRuneIdx := l.currRuneIndex()
+	pushedRunes := []rune{}
+	for i := currRuneIdx; i < len(l.runes); i++ {
+		pushedRunes = append(pushedRunes, l.runes[i])
+	}
+	d.clearLineFromCursor(l)
+	l.runes = l.runes[:currRuneIdx]
+	l.setLengthAndTabs()
+	return pushedRunes
+}
+
+func (d *Display) handleKeyBackspace() {
+	if cur.x == 0 {
+		if cur.y == 0 {
 			return
 		}
-		lastCursor.y--
-		lastCursor.x = d.CurrBuf.currLineLength()
+		prevLineLength := d.shiftLinesUp()
+		d.CurrBuf.content.DecrementLength()
+		cur.y--
+		cur.x = prevLineLength
+		d.Screen.ShowCursor(cur.x, cur.y)
+		d.Screen.Show()
 		return
 	}
 	r := d.CurrBuf.extractPrevRune()
-	d.Screen.SetContent(lastCursor.x-1, lastCursor.y, ' ', []rune{}, d.Style)
+	eolIdx := d.CurrBuf.currLineLength()
+	d.Screen.SetContent(eolIdx, cur.y, ' ', []rune{}, d.Style)
 	if r == '\t' {
-		lastCursor.x -= 7
+		for i := range 8 {
+			d.Screen.SetContent(eolIdx+i, cur.y, ' ', []rune{}, d.Style)
+		}
+		cur.x -= 7
 	}
-	lastCursor.x--
-	d.reRenderLine()
-	d.Screen.ShowCursor(lastCursor.x, lastCursor.y)
+	cur.x--
+	d.reRenderLineAtCursor()
+	d.Screen.ShowCursor(cur.x, cur.y)
 	d.Screen.Show()
 }
 
-func (d *Display) reRenderLine() {
-	line := d.CurrBuf.getLine(lastCursor.y)
-	d.clearLine(line)
-	d.resetContent(line)
+func (d *Display) shiftLinesUp() int {
+	content := d.CurrBuf.content
+	numLines := content.length
+	prevLineLength := content.lines[cur.y-1].length
+	for i := cur.y; i < numLines; i++ {
+		currRunes := content.lines[i].runes
+		content.lines[i-1].runes = append(content.lines[i-1].runes, currRunes...)
+		content.lines[i-1].setLengthAndTabs()
+		d.reRenderLine(i - 1)
+
+		content.lines[i].runes = []rune{}
+		d.clearLine(i)
+		content.lines[i].setLengthAndTabs()
+	}
+	return prevLineLength
 }
 
-func (d *Display) clearLine(line *Line) {
-	for i := range line.length {
-		d.Screen.SetContent(i, lastCursor.y, ' ', []rune{}, d.Style)
-		d.Screen.Show()
+func (d *Display) reRenderLine(idx int) {
+	line := d.CurrBuf.content.lines[idx]
+	d.clearLine(idx)
+	for i, r := range line.runes {
+		d.Screen.SetContent(i, idx, r, []rune{}, d.Style)
 	}
 }
 
-func (d *Display) resetContent(line *Line) {
-	idx := 0
-	for _, r := range line.runes {
+func (d *Display) clearLine(idx int) {
+	line := d.CurrBuf.content.lines[idx]
+	for i := range line.length {
+		d.Screen.SetContent(i, idx, ' ', []rune{}, d.Style)
+	}
+}
+
+func (d *Display) reRenderLineAtCursor() {
+	line := d.CurrBuf.getLine(cur.y)
+	d.clearLineFromCursor(line)
+	d.resetContentFromCursor(line)
+}
+
+func (d *Display) clearLineFromCursor(line *Line) {
+	for i := cur.x; i < line.length; i++ {
+		d.Screen.SetContent(i, cur.y, ' ', []rune{}, d.Style)
+	}
+}
+
+func (d *Display) resetContentFromCursor(line *Line) {
+	runeIdx := line.currRuneIndex()
+	idx := cur.x
+	for i := runeIdx; i < len(line.runes); i++ {
+		r := line.runes[i]
 		if r == '\t' {
 			idx += 7
 		}
-		d.Screen.SetContent(idx, lastCursor.y, r, []rune{}, d.Style)
+		d.Screen.SetContent(idx, cur.y, r, []rune{}, d.Style)
 		idx++
 	}
 }
@@ -128,32 +204,49 @@ func (b *Buffer) getLine(idx int) *Line {
 }
 
 func (b *Buffer) getPrevRune() rune {
-	line := b.content.lines[lastCursor.y]
+	line := b.content.lines[cur.y]
 	runeIdx := line.prevRuneIndex()
 	return line.runes[runeIdx]
 }
 
 func (b *Buffer) currLineLength() int {
-	return b.content.lines[lastCursor.y].length
+	return b.content.lines[cur.y].length
 }
 
 type LineArray struct {
-	lines []*Line
-	lock  sync.Mutex
+	lines  []*Line
+	length int
+	lock   sync.Mutex
 }
 
 func NewLineArray() *LineArray {
 	la := &LineArray{}
+	la.length = 1
 	for i := 0; i < 10000; i++ {
 		la.lines = append(la.lines, newLine())
 	}
 	return la
 }
 
-func (la *LineArray) AppendLine(text string, lineNum int) {
+func (la *LineArray) addLineContent(text string, lineNum int) {
 	line := la.lines[lineNum]
-	line.runes = []rune(text)
-	line.setLength()
+	for _, r := range text {
+		line.runes = append(line.runes, r)
+	}
+	line.setLengthAndTabs()
+	la.IncrementLength()
+}
+
+func (la *LineArray) IncrementLength() {
+	la.length++
+}
+
+func (la *LineArray) DecrementLength() {
+	la.length--
+}
+
+func (la *LineArray) Length() int {
+	return la.length
 }
 
 type Line struct {
@@ -168,19 +261,21 @@ func newLine() *Line {
 }
 
 func (l *Line) currRuneIndex() int {
-	return lastCursor.x - (l.tabs * 7)
+	return cur.x - (l.tabs * 7)
 }
 
 func (l *Line) prevRuneIndex() int {
-	return lastCursor.x - 1 - (l.tabs * 7)
+	return cur.x - 1 - (l.tabs * 7)
 }
 
-func (l *Line) setLength() {
+func (l *Line) setLengthAndTabs() {
 	l.length = 0
+	l.tabs = 0
 	for _, r := range l.runes {
 		l.length++
 		if r == '\t' {
 			l.length += 7
+			l.tabs++
 		}
 	}
 }
@@ -191,7 +286,7 @@ type cell struct {
 	style tcell.Style
 }
 
-var lastCursor cell
+var cur cell
 
 func main() {
 	fmt.Println("rizz will be a simple text editor one day!")
@@ -221,7 +316,7 @@ func main() {
 func (d *Display) runNormalMode() {
 	for {
 		d.Screen.Show()
-		d.Screen.ShowCursor(lastCursor.x, lastCursor.y)
+		d.Screen.ShowCursor(cur.x, cur.y)
 		ev := d.Screen.PollEvent()
 		switch ev := ev.(type) {
 		case *tcell.EventResize:
@@ -229,13 +324,13 @@ func (d *Display) runNormalMode() {
 		case *tcell.EventKey:
 			switch {
 			case ev.Rune() == 'j':
-				lastCursor.y++
+				cur.y++
 			case ev.Rune() == 'k':
-				lastCursor.y--
+				cur.y--
 			case ev.Rune() == 'l':
-				lastCursor.x++
+				cur.x++
 			case ev.Rune() == 'h':
-				lastCursor.x--
+				cur.x--
 			case ev.Rune() == 'Q':
 				return
 			case ev.Rune() == 'O':
@@ -244,7 +339,7 @@ func (d *Display) runNormalMode() {
 				d.runInsertMode()
 			}
 		}
-		d.Screen.ShowCursor(lastCursor.x, lastCursor.y)
+		d.Screen.ShowCursor(cur.x, cur.y)
 	}
 }
 
@@ -273,7 +368,7 @@ func getFileContents(filename string) *LineArray {
 		if err != nil {
 			break
 		}
-		content.AppendLine(text, lineNum)
+		content.addLineContent(text, lineNum)
 		lineNum++
 	}
 	return content
@@ -282,7 +377,7 @@ func getFileContents(filename string) *LineArray {
 // Skips 7 spaces when the tab character is reached. Not sure if I am able to change tcell's tab = 1 space myself
 // so this is my hack around it
 func readKeyTab() {
-	lastCursor.x += 7
+	cur.x += 7
 }
 
 func (d *Display) runOpenMode() {
@@ -298,12 +393,9 @@ func (d *Display) runInsertMode() {
 			case ev.Key() == tcell.KeyCtrlN:
 				return
 			case ev.Key() == tcell.KeyEnter:
-				lastCursor.x = 0
-				lastCursor.y++
-				d.Screen.ShowCursor(lastCursor.x, lastCursor.y)
-				d.Screen.Show()
+				d.handleKeyEnter()
 			case ev.Key() == tcell.KeyBackspace2:
-				d.handleBackspace()
+				d.handleKeyBackspace()
 			default:
 				d.SetRune(ev.Rune())
 
@@ -313,13 +405,10 @@ func (d *Display) runInsertMode() {
 }
 
 func (b *Buffer) addRune(r rune) {
-	line := b.getLine(lastCursor.y)
-	x := lastCursor.x
+	line := b.getLine(cur.y)
+	x := cur.x
 	line.runes = append(line.runes, r)
-	line.setLength()
-	if r == '\t' {
-		line.tabs++
-	}
+	line.setLengthAndTabs()
 	if line.length == x {
 		return
 	}
@@ -330,12 +419,8 @@ func (b *Buffer) addRune(r rune) {
 
 func (b *Buffer) extractPrevRune() rune {
 	r := b.getPrevRune()
-	line := b.getLine(lastCursor.y)
+	line := b.getLine(cur.y)
 	runeIdx := line.prevRuneIndex()
-	if r == '\t' {
-		line.tabs--
-	}
-
 	newRunes := []rune{}
 	for i, rune := range line.runes {
 		if i == runeIdx {
@@ -344,7 +429,7 @@ func (b *Buffer) extractPrevRune() rune {
 		newRunes = append(newRunes, rune)
 	}
 	line.runes = newRunes
-	line.setLength()
+	line.setLengthAndTabs()
 
 	return r
 }
