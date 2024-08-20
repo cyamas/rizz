@@ -67,7 +67,6 @@ func (d *Display) SetRune(r rune) {
 }
 
 func (d *Display) handleKeyEnter() {
-	d.CurrBuf.content.IncrementLength()
 	d.shiftLinesDown()
 	cur.x = 0
 	cur.y++
@@ -75,26 +74,40 @@ func (d *Display) handleKeyEnter() {
 
 func (d *Display) shiftLinesDown() {
 	content := d.CurrBuf.content
-	numLines := content.Length()
-	line := content.lines[cur.y]
-	d.clearCurrLine()
-	extracted := line.extractRestOfLine(d)
-	d.reRenderLine(cur.y)
+	d.clearLinesToEOF()
+	newLine := content.newLineFromKeyEnter()
+	postExtractLines := content.lines[cur.y+1:]
+	content.lines = append(content.lines[:cur.y+1], newLine)
+	content.lines = append(content.lines, postExtractLines...)
+	content.length++
+	d.reRenderLinesToEOF()
+}
 
-	for i := cur.y + 1; i <= numLines; i++ {
+func (d *Display) clearLinesToEOF() {
+	content := d.CurrBuf.content
+	for i := cur.y; i < content.length; i++ {
 		d.clearLineByIndex(i)
-		content.lines[i].runes, extracted = extracted, content.lines[i].runes
+	}
+}
+
+func (d *Display) reRenderLinesToEOF() {
+	content := d.CurrBuf.content
+	for i := cur.y; i < content.length; i++ {
 		d.reRenderLine(i)
 	}
 }
 
-func (l *Line) extractRestOfLine(d *Display) []rune {
-	pushedRunes := []rune{}
-	for i := cur.x; i < len(l.runes); i++ {
-		pushedRunes = append(pushedRunes, l.runes[i])
-	}
-	d.clearLineFromCursor(l)
+func (la *LineArray) newLineFromKeyEnter() *Line {
+	newLine := newLine()
+	newLine.runes = la.lines[cur.y].extractRestOfLine()
+	newLine.length = len(newLine.runes)
+	return newLine
+}
+
+func (l *Line) extractRestOfLine() []rune {
+	pushedRunes := l.runes[cur.x:]
 	l.runes = l.runes[:cur.x]
+	l.length = len(l.runes)
 	return pushedRunes
 }
 
@@ -110,9 +123,9 @@ func (d *Display) handleKeyBackspace() {
 }
 
 func (d *Display) backspaceToPrevLine() {
-	prevLineLength := d.shiftLinesUp()
-	d.CurrBuf.content.DecrementLength()
 	cur.y--
+	prevLineLength := d.shiftLinesUp()
+	d.reRenderLinesToEOF()
 	cur.x = prevLineLength
 }
 
@@ -124,22 +137,17 @@ func (d *Display) backspaceChar() {
 
 func (d *Display) shiftLinesUp() int {
 	content := d.CurrBuf.content
-	numLines := content.length
-	prevLineLength := len(content.lines[cur.y-1].runes)
-	for i := cur.y; i <= numLines; i++ {
-		d.clearLineByIndex(i - 1)
-		currRunes := content.lines[i].runes
-		content.lines[i-1].runes = append(content.lines[i-1].runes, currRunes...)
-		d.reRenderLine(i - 1)
-
-		d.clearCurrLine()
-		content.lines[i].runes = []rune{}
-	}
-	return prevLineLength
+	d.clearLinesToEOF()
+	ogLineLength := d.CurrBuf.getLine(cur.y).length
+	content.lines[cur.y].runes = append(content.lines[cur.y].runes, content.lines[cur.y+1].runes...)
+	content.lines = append(content.lines[:cur.y+1], content.lines[cur.y+2:]...)
+	content.length--
+	return ogLineLength
 }
 
 func (d *Display) reRenderLine(idx int) {
 	line := d.CurrBuf.content.lines[idx]
+	line.length = len(line.runes)
 	x := 0
 	for _, r := range line.runes {
 		d.Screen.SetContent(x, idx, r, []rune{}, d.Style)
@@ -215,9 +223,9 @@ type LineArray struct {
 
 func NewLineArray() *LineArray {
 	la := &LineArray{}
-	for i := 0; i < 10000; i++ {
-		la.lines = append(la.lines, newLine())
-	}
+	la.lines = make([]*Line, 0, 10000)
+	la.lines = append(la.lines, newLine())
+	la.length = 1
 	return la
 }
 
@@ -226,7 +234,7 @@ func (la *LineArray) addLineContent(text string, lineNum int) {
 	for _, r := range text {
 		line.runes = append(line.runes, r)
 	}
-	la.IncrementLength()
+	la.length++
 }
 
 func (la *LineArray) IncrementLength() {
@@ -344,7 +352,7 @@ func (d *Display) moveCursorToNextWord() {
 }
 
 func (d *Display) moveCursorDown() {
-	if cur.y == d.CurrBuf.content.Length() {
+	if cur.y == d.CurrBuf.content.length-1 {
 		return
 	}
 	nextLineLength := d.CurrBuf.getLine(cur.y + 1).length
@@ -486,20 +494,12 @@ func (l *Line) nextTabStopFromIndex(x int) int {
 	return x + 8 - (x % 8)
 }
 
-func (d *Display) clearContentForTab() {
-	for i := 0; i < 7; i++ {
-		d.Screen.SetContent(cur.x, cur.y, ' ', []rune{}, d.Style)
-		cur.x++
-	}
-}
-
 func (b *Buffer) addRune(r rune) {
 	line := b.getLine(cur.y)
-	line.runes = append(line.runes, r)
-	line.length = len(line.runes)
-	for i := line.Length() - 1; i > cur.x; i-- {
-		line.runes[i], line.runes[i-1] = line.runes[i-1], line.runes[i]
-	}
+	postCursorRunes := line.runes[cur.x:]
+	line.runes = append(line.runes[:cur.x], r)
+	line.runes = append(line.runes, postCursorRunes...)
+	line.length++
 }
 
 func (b *Buffer) removePrevRune() {
@@ -509,10 +509,8 @@ func (b *Buffer) removePrevRune() {
 		line.removeTabRunes()
 		return
 	}
-	newRunes := line.runes[:cur.x-1]
-	newRunes = append(newRunes, line.runes[cur.x:]...)
-	line.runes = newRunes
-	line.length = len(line.runes)
+	line.runes = append(line.runes[:cur.x-1], line.runes[cur.x:]...)
+	line.length--
 	cur.x--
 }
 
@@ -524,8 +522,7 @@ func (l *Line) removeTabRunes() {
 		}
 		idx--
 	}
-	postTab := l.runes[cur.x:]
-	l.runes = l.runes[:idx]
-	l.runes = append(l.runes, postTab...)
+	l.runes = append(l.runes[:idx], l.runes[cur.x:]...)
+	l.length = len(l.runes)
 	cur.x = idx
 }
