@@ -1,6 +1,19 @@
 package main
 
-import "testing"
+import (
+	"testing"
+)
+
+func TestAddKeyTab(t *testing.T) {
+	cur.x = 0
+	cur.y = 0
+	buf := newBuffer()
+	buf.content.lines[0].runes = []rune("hello")
+	buf.addKeyTab()
+	if len(buf.content.lines[0].runes) != 13 {
+		t.Fatalf("Length should  be %d. Got %d", 13, len(buf.content.lines[0].runes))
+	}
+}
 
 func TestRemovePrevRune(t *testing.T) {
 	runes1 := []rune{'a', 'b', 'c'}
@@ -87,6 +100,9 @@ func TestCreateTabRunes(t *testing.T) {
 
 func TestContentLength(t *testing.T) {
 	buf := newBuffer()
+	buf.content.lines = append(buf.content.lines, newLine())
+	buf.content.lines = append(buf.content.lines, newLine())
+	buf.content.length = len(buf.content.lines)
 	buf.content.addLineContent("hello", 0)
 	buf.content.addLineContent("oh hello", 1)
 	buf.content.addLineContent("hey there friend!", 2)

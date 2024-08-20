@@ -11,10 +11,13 @@ import (
 )
 
 type Display struct {
-	Screen  tcell.Screen
-	Style   tcell.Style
-	Buffers []*Buffer
-	CurrBuf *Buffer
+	Screen    tcell.Screen
+	width     int
+	height    int
+	Style     tcell.Style
+	Buffers   []*Buffer
+	CurrBuf   *Buffer
+	StatusBar []rune
 }
 
 func NewDisplay() *Display {
@@ -33,9 +36,45 @@ func (d *Display) Init() {
 	if err := screen.Init(); err != nil {
 		log.Fatalf("%v", err)
 	}
+	d.width, d.height = d.Screen.Size()
 	screen.SetStyle(style)
 	screen.Clear()
 
+}
+
+func (d *Display) setStatusBar() {
+	d.clearStatusBar()
+	lineCount := d.CurrBuf.content.length
+	lineLength := d.CurrBuf.content.lines[cur.y].length
+	text := convertRunesToText(d.CurrBuf.getLine(cur.y).runes)
+	status := []rune(fmt.Sprintf("Line: %d		Col: %d		LineCount: %d		LineLength: %d		Text: %s",
+		cur.y,
+		cur.x,
+		lineCount,
+		lineLength,
+		text))
+	d.StatusBar = status
+	for i, r := range status {
+		d.Screen.SetContent(i, d.height-1, r, []rune{}, d.Style)
+	}
+}
+
+func convertRunesToText(runes []rune) string {
+	str := ""
+	for _, r := range runes {
+		if r == '\t' {
+			str += "/t"
+			continue
+		}
+		str += string(r)
+	}
+	return str
+}
+
+func (d *Display) clearStatusBar() {
+	for i := range d.StatusBar {
+		d.Screen.SetContent(i, d.height-1, ' ', []rune{}, d.Style)
+	}
 }
 
 func (d *Display) addBuffer(buf *Buffer) {
@@ -76,11 +115,19 @@ func (d *Display) shiftLinesDown() {
 	content := d.CurrBuf.content
 	d.clearLinesToEOF()
 	newLine := content.newLineFromKeyEnter()
-	postExtractLines := content.lines[cur.y+1:]
-	content.lines = append(content.lines[:cur.y+1], newLine)
-	content.lines = append(content.lines, postExtractLines...)
+	content.insertNewLine(newLine)
 	content.length++
 	d.reRenderLinesToEOF()
+}
+
+func (la *LineArray) insertNewLine(line *Line) {
+	if cur.y == la.length-1 {
+		la.lines = append(la.lines, line)
+		return
+	}
+	la.lines = append(la.lines, nil)
+	copy(la.lines[cur.y+2:], la.lines[cur.y+1:])
+	la.lines[cur.y+1] = line
 }
 
 func (d *Display) clearLinesToEOF() {
@@ -146,12 +193,10 @@ func (d *Display) shiftLinesUp() int {
 }
 
 func (d *Display) reRenderLine(idx int) {
-	line := d.CurrBuf.content.lines[idx]
+	line := d.CurrBuf.getLine(idx)
 	line.length = len(line.runes)
-	x := 0
-	for _, r := range line.runes {
-		d.Screen.SetContent(x, idx, r, []rune{}, d.Style)
-		x++
+	for i := range line.runes {
+		d.Screen.SetContent(i, idx, line.runes[i], []rune{}, d.Style)
 	}
 }
 
@@ -234,7 +279,6 @@ func (la *LineArray) addLineContent(text string, lineNum int) {
 	for _, r := range text {
 		line.runes = append(line.runes, r)
 	}
-	la.length++
 }
 
 func (la *LineArray) IncrementLength() {
@@ -312,12 +356,12 @@ func main() {
 		d.CurrBuf.readFile(args[1])
 		d.displayCurrentBuffer()
 	}
-
 	d.runNormalMode()
 }
 
 func (d *Display) runNormalMode() {
 	for {
+		d.setStatusBar()
 		d.Screen.ShowCursor(cur.x, cur.y)
 		d.Screen.Show()
 		ev := d.Screen.PollEvent()
@@ -434,6 +478,7 @@ func (d *Display) runOpenMode() {
 
 func (d *Display) runInsertMode() {
 	for {
+		d.setStatusBar()
 		d.Screen.ShowCursor(cur.x, cur.y)
 		d.Screen.Show()
 		ev := d.Screen.PollEvent()
@@ -453,23 +498,26 @@ func (d *Display) runInsertMode() {
 
 			}
 		}
+		d.Screen.ShowCursor(cur.x, cur.y)
+		d.Screen.Show()
 	}
 }
 
 func (d *Display) handleKeyTab() {
 	d.CurrBuf.addKeyTab()
 	d.reRenderLine(cur.y)
+	cur.x = nextTabStopIdx()
 }
 
 func (b *Buffer) addKeyTab() {
 	line := b.getLine(cur.y)
 	tab := createTabRunes()
+	postTab := line.runes[cur.x:]
 	newRunes := line.runes[:cur.x]
 	newRunes = append(newRunes, tab...)
-	newRunes = append(newRunes, line.runes[cur.x:]...)
+	newRunes = append(newRunes, postTab...)
 	line.runes = newRunes
 	line.length = len(line.runes)
-	cur.x = nextTabStopIdx()
 }
 
 func createTabRunes() []rune {
