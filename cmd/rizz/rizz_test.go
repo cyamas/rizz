@@ -1,8 +1,47 @@
 package main
 
 import (
+	"fmt"
+	"log"
 	"testing"
+
+	"github.com/gdamore/tcell/v2"
 )
+
+func TestReRenderTab(t *testing.T) {
+	cur.x, cur.y = 0, 0
+	d := NewDisplay()
+	initTestDisplay(d)
+	buf := newBuffer()
+	d.addBuffer(buf)
+	d.SetRune('a')
+	d.SetRune('b')
+	d.SetRune('c')
+	d.SetRune('d')
+	cur.x = 0
+	d.handleKeyTab()
+	result := d.CurrBuf.currLine().runes
+	expected := []rune{'\t', ' ', ' ', ' ', ' ', ' ', ' ', '\t'}
+	d.reRenderLine(cur.y)
+	for i := range expected {
+		if result[i] != expected[i] {
+			t.Fatalf("rune should be %v. Got %v", expected[i], result[i])
+		}
+	}
+	fmt.Println("result: ", result)
+	fmt.Println("string: ", convertRunesToText(result))
+}
+func initTestDisplay(d *Display) {
+	screen, err := tcell.NewScreen()
+	if err != nil {
+		log.Fatalf("%v", err)
+	}
+	style := tcell.StyleDefault.Background(tcell.ColorBlack).Foreground(tcell.ColorWhite)
+	d.Screen = screen
+	d.Screen.SetStyle(style)
+	d.Style = style
+	d.width, d.height = d.Screen.Size()
+}
 
 func TestAddKeyTab(t *testing.T) {
 	cur.x = 0

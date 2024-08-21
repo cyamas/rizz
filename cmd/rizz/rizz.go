@@ -10,6 +10,20 @@ import (
 	"github.com/gdamore/tcell/v2"
 )
 
+const (
+	Normal = iota
+	Insert
+	Exit
+	Open
+)
+
+var modes = map[int]string{
+	Normal: "Normal",
+	Insert: "Insert",
+	Exit:   "Exit",
+	Open:   "Open",
+}
+
 type Display struct {
 	Screen    tcell.Screen
 	width     int
@@ -17,6 +31,7 @@ type Display struct {
 	Style     tcell.Style
 	Buffers   []*Buffer
 	CurrBuf   *Buffer
+	Mode      int
 	StatusBar []rune
 }
 
@@ -45,9 +60,10 @@ func (d *Display) Init() {
 func (d *Display) setStatusBar() {
 	d.clearStatusBar()
 	lineCount := d.CurrBuf.content.length
-	lineLength := d.CurrBuf.content.lines[cur.y].length
+	lineLength := len(d.CurrBuf.content.lines[cur.y].runes)
 	text := convertRunesToText(d.CurrBuf.getLine(cur.y).runes)
-	status := []rune(fmt.Sprintf("Line: %d		Col: %d		LineCount: %d		LineLength: %d		Text: %s",
+	status := []rune(fmt.Sprintf("%s Mode			Line: %d		Col: %d		LineCount: %d		LineLength: %d		Text: %s",
+		modes[d.Mode],
 		cur.y,
 		cur.x,
 		lineCount,
@@ -55,7 +71,7 @@ func (d *Display) setStatusBar() {
 		text))
 	d.StatusBar = status
 	for i, r := range status {
-		d.Screen.SetContent(i, d.height-1, r, []rune{}, d.Style)
+		d.Screen.SetContent(i, d.height-1, r, nil, d.Style)
 	}
 }
 
@@ -73,7 +89,7 @@ func convertRunesToText(runes []rune) string {
 
 func (d *Display) clearStatusBar() {
 	for i := range d.StatusBar {
-		d.Screen.SetContent(i, d.height-1, ' ', []rune{}, d.Style)
+		d.Screen.SetContent(i, d.height-1, ' ', nil, d.Style)
 	}
 }
 
@@ -89,7 +105,7 @@ func (d *Display) displayCurrentBuffer() {
 			if r == '\t' {
 				cur.x += 7
 			}
-			d.Screen.SetContent(cur.x, cur.y, r, []rune{}, d.Style)
+			d.Screen.SetContent(cur.x, cur.y, r, nil, d.Style)
 			cur.x++
 		}
 		cur.x = 0
@@ -195,26 +211,22 @@ func (d *Display) shiftLinesUp() int {
 func (d *Display) reRenderLine(idx int) {
 	line := d.CurrBuf.getLine(idx)
 	line.length = len(line.runes)
+	x := 0
 	for i := range line.runes {
-		d.Screen.SetContent(i, idx, line.runes[i], []rune{}, d.Style)
+		d.Screen.SetContent(x, idx, line.runes[i], nil, d.Style)
+		x++
 	}
 }
 
 func (d *Display) clearLineByIndex(idx int) {
 	line := d.CurrBuf.content.lines[idx]
 	for i := 0; i < line.length; i++ {
-		d.Screen.SetContent(i, idx, ' ', []rune{}, d.Style)
+		d.Screen.SetContent(i, idx, ' ', nil, d.Style)
 	}
 }
 
 func (d *Display) clearCurrLine() {
 	d.clearLineByIndex(cur.y)
-}
-
-func (l *Line) Clear(d *Display) {
-	for i := 0; i < len(l.runes); i++ {
-		d.Screen.SetContent(i, cur.y, ' ', []rune{}, d.Style)
-	}
 }
 
 func (d *Display) reRenderLineAtCursor() {
@@ -225,7 +237,7 @@ func (d *Display) reRenderLineAtCursor() {
 
 func (d *Display) clearLineFromCursor(line *Line) {
 	for i := cur.x; i < line.length; i++ {
-		d.Screen.SetContent(i, cur.y, ' ', []rune{}, d.Style)
+		d.Screen.SetContent(i, cur.y, ' ', nil, d.Style)
 	}
 }
 
@@ -233,7 +245,7 @@ func (d *Display) resetContentFromCursor(line *Line) {
 	idx := cur.x
 	for i := idx; i < line.Length(); i++ {
 		r := line.runes[i]
-		d.Screen.SetContent(idx, cur.y, r, []rune{}, d.Style)
+		d.Screen.SetContent(idx, cur.y, r, nil, d.Style)
 		idx++
 	}
 }
@@ -356,39 +368,83 @@ func main() {
 		d.CurrBuf.readFile(args[1])
 		d.displayCurrentBuffer()
 	}
-	d.runNormalMode()
+	d.Mode = Normal
+	d.run()
 }
 
-func (d *Display) runNormalMode() {
+func (d *Display) run() {
 	for {
+		if d.Mode == Exit {
+			return
+		}
 		d.setStatusBar()
 		d.Screen.ShowCursor(cur.x, cur.y)
 		d.Screen.Show()
 		ev := d.Screen.PollEvent()
-		switch ev := ev.(type) {
-		case *tcell.EventResize:
-			d.Screen.Sync()
-		case *tcell.EventKey:
-			switch {
-			case ev.Rune() == 'Q':
-				return
-			case ev.Rune() == 'j':
-				d.moveCursorDown()
-			case ev.Rune() == 'k':
-				d.moveCursorUp()
-			case ev.Rune() == 'l':
-				d.moveCursorRight()
-			case ev.Rune() == 'h':
-				d.moveCursorLeft()
-			case ev.Rune() == 'w':
-				d.moveCursorToNextWord()
-			case ev.Rune() == 'O':
-				d.runOpenMode()
-			case ev.Rune() == 'I':
-				d.runInsertMode()
-			}
+		switch {
+		case d.Mode == Insert:
+			d.runInsertMode(ev)
+		case d.Mode == Normal:
+			d.runNormalMode(ev)
+		case d.Mode == Open:
+			d.runOpenMode(ev)
+		}
+
+	}
+}
+
+func (d *Display) runNormalMode(ev tcell.Event) {
+	switch ev := ev.(type) {
+	case *tcell.EventResize:
+		d.Screen.Sync()
+	case *tcell.EventKey:
+		switch {
+		case ev.Rune() == 'Q':
+			d.Mode = Exit
+		case ev.Rune() == 'j':
+			d.moveCursorDown()
+		case ev.Rune() == 'k':
+			d.moveCursorUp()
+		case ev.Rune() == 'l':
+			d.moveCursorRight()
+		case ev.Rune() == 'h':
+			d.moveCursorLeft()
+		case ev.Rune() == 'w':
+			d.moveCursorToNextWord()
+		case ev.Rune() == 'O':
+			d.Mode = Open
+		case ev.Rune() == 'I':
+			d.Mode = Insert
 		}
 	}
+
+}
+
+func (d *Display) runInsertMode(ev tcell.Event) {
+	d.setStatusBar()
+	d.Screen.ShowCursor(cur.x, cur.y)
+	d.Screen.Show()
+	switch ev := ev.(type) {
+	case *tcell.EventKey:
+		switch {
+		case ev.Key() == tcell.KeyCtrlN:
+			d.Mode = Normal
+		case ev.Key() == tcell.KeyEnter:
+			d.handleKeyEnter()
+		case ev.Key() == tcell.KeyBackspace2:
+			d.handleKeyBackspace()
+		case ev.Key() == tcell.KeyTab:
+			d.handleKeyTab()
+			cur.x += nextTabStopOffset()
+		default:
+			d.SetRune(ev.Rune())
+
+		}
+	}
+}
+
+func (d *Display) runOpenMode(ev tcell.Event) {
+
 }
 
 func (d *Display) moveCursorToNextWord() {
@@ -466,64 +522,35 @@ func getFileContents(filename string) *LineArray {
 	return content
 }
 
-// Skips 7 spaces when the tab character is reached. Not sure if I am able to change tcell's tab = 1 space myself
-// so this is my hack around it
-func readKeyTab() {
-	cur.x += 7
-}
-
-func (d *Display) runOpenMode() {
-
-}
-
-func (d *Display) runInsertMode() {
-	for {
-		d.setStatusBar()
-		d.Screen.ShowCursor(cur.x, cur.y)
-		d.Screen.Show()
-		ev := d.Screen.PollEvent()
-		switch ev := ev.(type) {
-		case *tcell.EventKey:
-			switch {
-			case ev.Key() == tcell.KeyCtrlN:
-				return
-			case ev.Key() == tcell.KeyEnter:
-				d.handleKeyEnter()
-			case ev.Key() == tcell.KeyBackspace2:
-				d.handleKeyBackspace()
-			case ev.Key() == tcell.KeyTab:
-				d.handleKeyTab()
-			default:
-				d.SetRune(ev.Rune())
-
-			}
-		}
-		d.Screen.ShowCursor(cur.x, cur.y)
-		d.Screen.Show()
-	}
-}
-
 func (d *Display) handleKeyTab() {
 	d.CurrBuf.addKeyTab()
+	d.clearCurrLine()
 	d.reRenderLine(cur.y)
-	cur.x = nextTabStopIdx()
 }
 
 func (b *Buffer) addKeyTab() {
-	line := b.getLine(cur.y)
 	tab := createTabRunes()
-	postTab := line.runes[cur.x:]
-	newRunes := line.runes[:cur.x]
-	newRunes = append(newRunes, tab...)
-	newRunes = append(newRunes, postTab...)
-	line.runes = newRunes
+	line := b.getLine(cur.y)
+
+	for i := 0; i < len(tab); i++ {
+		line.runes = append(line.runes, ' ')
+	}
+	copy(line.runes[cur.x+len(tab):], line.runes[cur.x:])
+	for i := range tab {
+		line.runes[cur.x+i] = tab[i]
+	}
 	line.length = len(line.runes)
 }
 
 func createTabRunes() []rune {
 	tab := []rune{}
 	tab = append(tab, '\t')
-	for i := 1; i < nextTabStopOffset()-1; i++ {
+	offset := nextTabStopOffset()
+	if offset == 1 {
+		return tab
+	}
+
+	for i := 1; i < offset-1; i++ {
 		tab = append(tab, ' ')
 	}
 	tab = append(tab, '\t')
