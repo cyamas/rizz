@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"sync"
+	"unicode"
 
 	"github.com/gdamore/tcell/v2"
 )
@@ -15,6 +16,9 @@ const (
 	Insert
 	Exit
 	Open
+	Write
+	Delete
+	New
 )
 
 var modes = map[int]string{
@@ -22,6 +26,9 @@ var modes = map[int]string{
 	Insert: "Insert",
 	Exit:   "Exit",
 	Open:   "Open",
+	Write:  "Write",
+	Delete: "Delete",
+	New:    "New",
 }
 
 type Display struct {
@@ -102,9 +109,6 @@ func (d *Display) displayCurrentBuffer() {
 	buf := d.CurrBuf
 	for _, line := range buf.content.lines {
 		for _, r := range line.runes {
-			if r == '\t' {
-				cur.x += 7
-			}
 			d.Screen.SetContent(cur.x, cur.y, r, nil, d.Style)
 			cur.x++
 		}
@@ -252,6 +256,7 @@ func (d *Display) resetContentFromCursor(line *Line) {
 
 type Buffer struct {
 	content *LineArray
+	path    string
 }
 
 func newBuffer() *Buffer {
@@ -269,7 +274,7 @@ func (b *Buffer) getPrevRune() rune {
 }
 
 func (b *Buffer) currLineLength() int {
-	return b.content.lines[cur.y].length
+	return b.currLine().length
 }
 
 type LineArray struct {
@@ -284,13 +289,6 @@ func NewLineArray() *LineArray {
 	la.lines = append(la.lines, newLine())
 	la.length = 1
 	return la
-}
-
-func (la *LineArray) addLineContent(text string, lineNum int) {
-	line := la.lines[lineNum]
-	for _, r := range text {
-		line.runes = append(line.runes, r)
-	}
 }
 
 func (la *LineArray) IncrementLength() {
@@ -377,6 +375,10 @@ func (d *Display) run() {
 		if d.Mode == Exit {
 			return
 		}
+		if d.Mode == Write {
+			d.CurrBuf.writeFile()
+			d.Mode = Normal
+		}
 		d.setStatusBar()
 		d.Screen.ShowCursor(cur.x, cur.y)
 		d.Screen.Show()
@@ -388,6 +390,10 @@ func (d *Display) run() {
 			d.runNormalMode(ev)
 		case d.Mode == Open:
 			d.runOpenMode(ev)
+		case d.Mode == Delete:
+			d.runDeleteMode(ev)
+		case d.Mode == New:
+			d.runNewMode(ev)
 		}
 
 	}
@@ -401,6 +407,8 @@ func (d *Display) runNormalMode(ev tcell.Event) {
 		switch {
 		case ev.Rune() == 'Q':
 			d.Mode = Exit
+		case ev.Rune() == 'W':
+			d.Mode = Write
 		case ev.Rune() == 'j':
 			d.moveCursorDown()
 		case ev.Rune() == 'k':
@@ -410,11 +418,17 @@ func (d *Display) runNormalMode(ev tcell.Event) {
 		case ev.Rune() == 'h':
 			d.moveCursorLeft()
 		case ev.Rune() == 'w':
-			d.moveCursorToNextWord()
+			d.moveCursorToNextWord(false)
+		case ev.Rune() == 'b':
+			d.moveCursorToPreviousWord()
 		case ev.Rune() == 'O':
 			d.Mode = Open
 		case ev.Rune() == 'I':
 			d.Mode = Insert
+		case ev.Rune() == 'd':
+			d.Mode = Delete
+		case ev.Rune() == 'n':
+			d.Mode = New
 		}
 	}
 
@@ -443,12 +457,157 @@ func (d *Display) runInsertMode(ev tcell.Event) {
 	}
 }
 
+func (d *Display) runDeleteMode(ev tcell.Event) {
+	switch ev := ev.(type) {
+	case *tcell.EventKey:
+		switch {
+		case ev.Rune() == 'd':
+			d.deleteLine()
+			d.Mode = Normal
+		}
+	}
+}
+
+func (d *Display) runNewMode(ev tcell.Event) {
+	switch ev := ev.(type) {
+	case *tcell.EventKey:
+		switch {
+		case ev.Rune() == 'l':
+			d.insertBlankLine()
+		}
+	}
+}
+
+func (d *Display) insertBlankLine() {
+	line := newLine()
+	d.clearLinesToEOF()
+	d.CurrBuf.content.insertNewLine(line)
+	d.reRenderLinesToEOF()
+	cur.x = 0
+	cur.y++
+	d.Mode = Insert
+
+}
+
+func (d *Display) deleteLine() {
+	line := d.CurrBuf.currLine()
+	line.runes = []rune{}
+	d.shiftLinesUp()
+	d.reRenderLinesToEOF()
+	cur.x = 0
+}
+
 func (d *Display) runOpenMode(ev tcell.Event) {
 
 }
 
-func (d *Display) moveCursorToNextWord() {
+var wordSeparators = map[rune]bool{
+	' ': true,
+	'.': true,
+	':': true,
+	';': true,
+	',': true,
+	'"': true,
+	'{': true,
+	'}': true,
+	'(': true,
+	')': true,
+	'[': true,
+	']': true,
+}
 
+func (d *Display) moveCursorToPreviousWord() {
+	wordFound := false
+	line := d.CurrBuf.currLine()
+	if cur.x == 0 && cur.y == 0 {
+		return
+	}
+	if cur.x == 0 {
+		cur.y--
+		if d.CurrBuf.currLineLength() == 0 {
+			cur.x = 0
+		} else {
+			cur.x = d.CurrBuf.currLineLength() - 1
+		}
+		return
+	}
+	if isLetterOrNumber(line.runes[cur.x]) && isLetterOrNumber(line.runes[cur.x-1]) {
+		wordFound = true
+	}
+	for i := cur.x - 1; i >= 0; i-- {
+		r := line.runes[i]
+		switch {
+		case i == 0:
+			cur.x = 0
+			return
+		case r == '\t':
+			if wordFound && (r != ' ' || r != '\t') {
+				cur.x = i + 1
+				return
+			}
+		case wordFound && isSeparator(r):
+			cur.x = i + 1
+			return
+		case !wordFound && isSeparator(r):
+			if r == ' ' {
+				continue
+			}
+			cur.x = i
+			return
+		default:
+			wordFound = true
+		}
+	}
+}
+
+func isLetterOrNumber(r rune) bool {
+	return unicode.IsDigit(r) || unicode.IsLetter(r)
+}
+
+func isSeparator(r rune) bool {
+	_, ok := wordSeparators[r]
+	return ok
+}
+
+func (d *Display) moveCursorToNextWord(sepFound bool) {
+	line := d.CurrBuf.currLine()
+	for i := cur.x; i < len(line.runes); i++ {
+		if _, ok := wordSeparators[line.runes[i]]; ok {
+			sepFound = true
+			continue
+		}
+		switch line.runes[i] {
+		case '\t':
+			i = line.nextTabStopFromIndex(i) - 1
+			continue
+		case '\'':
+			if !isApostrophe(line.runes, i) {
+				sepFound = true
+			}
+		default:
+			if sepFound == true {
+				cur.x = i
+				return
+			}
+		}
+	}
+	if d.CurrBuf.content.length == cur.y+1 {
+		return
+	}
+	cur.x = 0
+	cur.y++
+	d.moveCursorToNextWord(true)
+}
+
+func isApostrophe(runes []rune, idx int) bool {
+	if idx == 0 || idx == len(runes)-1 {
+		return false
+	}
+	left, right := runes[idx-1], runes[idx+1]
+	if unicode.IsLetter(left) && unicode.IsLetter(right) {
+		return true
+	}
+	return false
 }
 
 func (d *Display) moveCursorDown() {
@@ -491,18 +650,46 @@ func (b *Buffer) currLine() *Line {
 	return b.getLine(cur.y)
 }
 
-func (b *Buffer) readFile(filename string) {
-	b.content = getFileContents(filename)
+func (b *Buffer) writeFile() {
+	file, err := os.Create(b.path)
+	if err != nil {
+		log.Fatalln("Could not create file: ", err)
+	}
+	defer file.Close()
+
+	newContent := ""
+	for _, line := range b.content.lines {
+		newContent += line.convertRunesForWrite()
+	}
+	_, err = file.WriteString(newContent)
+	if err != nil {
+		log.Fatalln("could not write to file")
+	}
 }
 
-func getFileContents(filename string) *LineArray {
+func (l *Line) convertRunesForWrite() string {
+	str := ""
+	for i := 0; i < len(l.runes); i++ {
+		str += string(l.runes[i])
+		if l.runes[i] == '\t' {
+			i += nextTabStopOffsetFromIndex(i) - 1
+		}
+	}
+	str += "\n"
+	return str
+}
+
+func (b *Buffer) readFile(filename string) {
 	dir, err := os.Getwd()
 	if err != nil {
-		log.Fatalf("%v", err)
+		log.Fatalln("Could not get working directory", err)
 	}
-	path := dir + "/" + filename
+	b.path = dir + "/" + filename
+	b.content = b.setContentFromFile()
+}
 
-	file, err := os.Open(path)
+func (b *Buffer) setContentFromFile() *LineArray {
+	file, err := os.Open(b.path)
 	if err != nil {
 		fmt.Println("could not open file", err)
 	}
@@ -510,16 +697,45 @@ func getFileContents(filename string) *LineArray {
 
 	reader := bufio.NewReader(file)
 	content := NewLineArray()
-	lineNum := 0
 	for {
 		text, err := reader.ReadString('\n')
 		if err != nil {
 			break
 		}
-		content.addLineContent(text, lineNum)
-		lineNum++
+		content.addLineFromFile(text)
+		content.length++
 	}
+	content.length--
 	return content
+}
+
+func (la *LineArray) addLineFromFile(text string) {
+	line := newLine()
+	for _, ch := range text {
+		if ch == '\n' {
+			break
+		}
+		if ch == '\t' {
+			line.addTabFromFile()
+			continue
+		}
+		line.runes = append(line.runes, ch)
+	}
+	line.length = len(line.runes)
+	if la.length == 1 {
+		la.lines[0] = line
+	} else {
+		la.lines = append(la.lines, line)
+	}
+}
+
+func (l *Line) addTabFromFile() {
+	l.runes = append(l.runes, '\t')
+	offset := nextTabStopOffsetFromIndex(len(l.runes) - 1)
+	for i := 1; i < offset-1; i++ {
+		l.runes = append(l.runes, ' ')
+	}
+	l.runes = append(l.runes, '\t')
 }
 
 func (d *Display) handleKeyTab() {
@@ -561,6 +777,10 @@ func nextTabStopOffset() int {
 	return 8 - (cur.x % 8)
 }
 
+func nextTabStopOffsetFromIndex(idx int) int {
+	return 8 - (idx % 8)
+}
+
 func nextTabStopIdx() int {
 	return cur.x + nextTabStopOffset()
 }
@@ -571,9 +791,9 @@ func (l *Line) nextTabStopFromIndex(x int) int {
 
 func (b *Buffer) addRune(r rune) {
 	line := b.getLine(cur.y)
-	postCursorRunes := line.runes[cur.x:]
-	line.runes = append(line.runes[:cur.x], r)
-	line.runes = append(line.runes, postCursorRunes...)
+	line.runes = append(line.runes, ' ')
+	copy(line.runes[cur.x+1:], line.runes[cur.x:])
+	line.runes[cur.x] = r
 	line.length++
 }
 
