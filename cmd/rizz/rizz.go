@@ -53,12 +53,11 @@ func main() {
 	}
 	defer quit()
 	d.ActiveBuf = newBuffer()
-	d.BufWindow = newBuffer()
 	if len(args) == 2 {
 		d.ActiveBuf.readFile(args[1])
-		d.setBufWindow(0)
-		d.displayBufWindow()
 	}
+	d.initBufWindow()
+	d.setBufWindow()
 	d.Mode = Normal
 	cur.x = leftMarginSize
 	cur.y = 0
@@ -112,24 +111,10 @@ func (la *LineArray) addLineFromFile(text string) {
 	la.lines = append(la.lines, line)
 }
 
-func (d *Display) setBufWindow(idx int) {
-	d.BufWindow.startIdx = idx
-	activeBuf := d.ActiveBuf
-	bufHeight := d.height - 1
-	if activeBuf.length() < bufHeight {
-		d.BufWindow.content.lines = activeBuf.content.lines
-		return
-	}
-	if idx+bufHeight > activeBuf.length() {
-		idx = activeBuf.length() - bufHeight
-	}
-	d.BufWindow.content.lines = activeBuf.content.lines[idx : idx+bufHeight]
-}
-
-func (d *Display) displayBufWindow() {
-	buf := d.BufWindow
+func (d *Display) setBufWindow() {
+	window := d.bufWindow
 	cur.x = leftMarginSize
-	for y, line := range buf.content.lines {
+	for y, line := range window.lines {
 		for j, r := range line.runes {
 			x := cur.x + j
 			d.Screen.SetContent(x, y, r, nil, d.BufStyle)
@@ -146,11 +131,66 @@ func (l *Line) addTabFromFile() {
 	l.runes = append(l.runes, '\t')
 }
 
+type BufWindow struct {
+	buf    *Buffer
+	lines  []*Line
+	bufIdx int
+	size   int
+}
+
+func newBufWindow() *BufWindow {
+	return &BufWindow{
+		lines: []*Line{},
+	}
+}
+
+func (bw *BufWindow) update(idx int) {
+	switch {
+	case bw.buf.length() < bw.size:
+		bw.bufIdx = 0
+		bw.buf.windowStart = 0
+		bw.lines = append([]*Line(nil), bw.buf.content.lines...)
+	case idx > bw.buf.length()-bw.size:
+		bw.bufIdx = bw.buf.length() - bw.size
+		bw.buf.windowStart = bw.bufIdx
+		bw.lines = append([]*Line(nil), bw.buf.content.lines[bw.bufIdx:bw.bufIdx+bw.size]...)
+	default:
+		bw.bufIdx = idx
+		bw.buf.windowStart = idx
+		bw.lines = append([]*Line(nil), bw.buf.content.lines[bw.bufIdx:bw.bufIdx+bw.size]...)
+	}
+}
+
+func (bw *BufWindow) resetLines() {
+	start := bw.bufIdx
+	end := bw.bufIdx + bw.length() - 1
+	bw.lines = append([]*Line(nil), bw.buf.content.lines[start:end]...)
+}
+
+func (bw *BufWindow) line(idx int) *Line {
+	return bw.lines[idx]
+}
+
+func (bw *BufWindow) lastLine() *Line {
+	return bw.lines[bw.size-1]
+}
+
+func (d *Display) initBufWindow() {
+	bw := newBufWindow()
+	d.bufWindow = bw
+	bw.buf = d.ActiveBuf
+	bw.size = d.height - 1
+	if bw.buf.length() == 1 && bw.buf.getLine(0).length() == 0 {
+		return
+	}
+	bw.lines = append([]*Line(nil), d.ActiveBuf.content.lines[:bw.size]...)
+}
+
 type Display struct {
 	Screen         tcell.Screen
 	width          int
 	height         int
-	BufWindow      *Buffer
+	bufWindow      *BufWindow
 	ActiveBuf      *Buffer
 	Mode           int
 	StatusBar      []rune
@@ -162,7 +202,7 @@ type Display struct {
 func NewDisplay() *Display {
 	bufStyle := tcell.StyleDefault.Foreground(tcell.ColorWhite).Background(tcell.ColorBlack)
 	lineNoStyle := tcell.StyleDefault.Foreground(tcell.ColorAqua).Background(tcell.ColorBlack)
-	statusBarStyle := tcell.StyleDefault.Foreground(tcell.ColorWhiteSmoke).Background(tcell.ColorBlack)
+	statusBarStyle := tcell.StyleDefault.Foreground(tcell.ColorWhiteSmoke).Background(tcell.ColorDarkSlateGray)
 	return &Display{
 		BufStyle:       bufStyle,
 		LineNoStyle:    lineNoStyle,
@@ -194,7 +234,7 @@ func (d *Display) run() {
 			d.ActiveBuf.writeToFile()
 			d.Mode = Normal
 		}
-		setBufPos()
+		d.setBufPos()
 		d.setStatusBar()
 		d.setLineNumbers()
 		d.Screen.ShowCursor(cur.x, cur.y)
@@ -224,12 +264,17 @@ func (d *Display) runDeleteMode(ev tcell.Event) {
 		}
 	}
 }
+
+func (d *Display) currLine() *Line {
+	return d.ActiveBuf.currLine()
+}
 func (d *Display) deleteLine() {
-	line := d.BufWindow.currLine()
+	line := d.ActiveBuf.currLine()
 	d.clearCurrLine()
 	line.runes = []rune{}
-	if cur.y == d.BufWindow.length()-1 {
+	if cur.y == d.bufWindow.length()-1 {
 		d.deleteLastLine()
+		d.bufWindow.update(d.bufWindow.bufIdx)
 		return
 	}
 	d.shiftLinesUp()
@@ -237,14 +282,20 @@ func (d *Display) deleteLine() {
 	cur.x = leftMarginSize
 }
 
+func (bw *BufWindow) length() int {
+	return len(bw.lines)
+}
+
 func (d *Display) deleteLastLine() {
-	content := d.BufWindow.content
-	d.clearCurrLine()
+	content := d.ActiveBuf.content
 	if cur.y == 0 {
-		content.lines[0].runes = []rune{}
 		return
 	}
-	content.lines = content.lines[:d.BufWindow.length()-1]
+	content.lines = content.lines[:len(content.lines)-1]
+	if len(content.lines) > d.bufWindow.size {
+		d.scrollUp()
+		return
+	}
 	cur.x = leftMarginSize
 	cur.y--
 }
@@ -263,7 +314,14 @@ func (d *Display) runNewMode(ev tcell.Event) {
 func (d *Display) insertBlankLine() {
 	line := newLine()
 	d.clearLinesToEOF()
-	d.BufWindow.content.insertNewLine(line)
+	d.ActiveBuf.content.insertNewLine(line)
+	if d.cursor75PercentDown() {
+		d.scrollDown()
+		d.setLineNumbers()
+		cur.x = leftMarginSize
+		return
+	}
+	d.bufWindow.update(d.bufWindow.bufIdx)
 	d.reRenderLinesToEOF()
 	d.setLineNumbers()
 	cur.x = leftMarginSize
@@ -315,8 +373,12 @@ func (d *Display) runNormalMode(ev tcell.Event) {
 			d.Mode = Write
 		case 'j':
 			d.moveCursorDown()
+		case 'J':
+			d.moveCursorHalfWindowDown()
 		case 'k':
 			d.moveCursorUp()
+		case 'K':
+			d.moveCursorHalfWindowUp()
 		case 'l':
 			d.moveCursorRight()
 		case 'h':
@@ -332,6 +394,31 @@ func (d *Display) runNormalMode(ev tcell.Event) {
 		case 'd':
 			d.Mode = Delete
 		}
+	}
+}
+
+func (d *Display) moveCursorHalfWindowDown() {
+	endBuf := d.ActiveBuf.length() - 1
+	if bufPos.y >= endBuf-(d.bufWindow.size/2) {
+		for i := bufPos.y; i <= endBuf; i++ {
+			d.moveCursorDown()
+		}
+		return
+	}
+	for i := 0; i < d.bufWindow.size/2; i++ {
+		d.moveCursorDown()
+	}
+}
+
+func (d *Display) moveCursorHalfWindowUp() {
+	if bufPos.y <= d.bufWindow.size/2 {
+		for i := bufPos.y; i >= 0; i-- {
+			d.moveCursorUp()
+		}
+		return
+	}
+	for i := 0; i < d.bufWindow.size/2; i++ {
+		d.moveCursorUp()
 	}
 }
 
@@ -351,7 +438,7 @@ var nonSpaceSeparators = map[rune]bool{
 }
 
 func (d *Display) moveCursorToPrevWord() {
-	line := d.BufWindow.currLine()
+	line := d.ActiveBuf.currLine()
 	if bufPos.x == 0 && cur.y == 0 {
 		return
 	}
@@ -361,8 +448,19 @@ func (d *Display) moveCursorToPrevWord() {
 			return
 		}
 	}
+	if d.canScrollUp() {
+		d.scrollUp()
+		line = d.bufWindow.line(cur.y)
+		if line.length() > 0 {
+			cur.x = leftMarginSize + line.length() - 1
+			return
+		}
+		cur.x = leftMarginSize
+		return
+	}
 	cur.y--
-	line = d.BufWindow.currLine()
+	d.setBufPos()
+	line = d.ActiveBuf.currLine()
 	if line.length() > 0 {
 		cur.x = leftMarginSize + line.length() - 1
 		return
@@ -420,9 +518,10 @@ func (l *Line) prevRune() rune {
 }
 
 func (d *Display) moveCursorToNextWord(sepFound bool) {
-	line := d.BufWindow.currLine()
+	line := d.ActiveBuf.currLine()
 	if len(line.runes) == 0 {
 		cur.y++
+		d.setBufPos()
 		d.moveCursorToNextWord(true)
 		return
 	}
@@ -430,16 +529,52 @@ func (d *Display) moveCursorToNextWord(sepFound bool) {
 		cur.x = pos
 		return
 	}
-	if d.BufWindow.length() == cur.y+1 {
+	if d.ActiveBuf.length() == bufPos.y {
 		return
 	}
 	cur.x = leftMarginSize
-	setBufPos()
+	d.setBufPos()
+	if d.canScrollDown() {
+		d.scrollDown()
+		d.moveCursorToNextWord(true)
+		return
+	}
 	cur.y++
-	d.moveCursorToNextWord(true)
+	d.setBufPos()
+	sepFound = true
+	d.moveCursorToNextWord(sepFound)
 }
 
 func (l *Line) nextWordPos(sepFound bool) (int, bool) {
+	if sepFound && l.runes[bufPos.x] != ' ' && l.runes[bufPos.x] != '\t' {
+		return bufPos.x + leftMarginSize, true
+	}
+	for i := bufPos.x + 1; i < len(l.runes); i++ {
+		curr := l.runes[i]
+		prev := l.runes[i-1]
+		switch {
+		case curr == ' ' || curr == '\t' || isApostrophe(l.runes, i):
+			continue
+		case isLetterOrNumber(curr) && isLetterOrNumber(prev):
+			continue
+		case isLetterOrNumber(prev) && isNonSpaceSeparator(curr):
+			return i + leftMarginSize, true
+		default:
+			return i + leftMarginSize, true
+			/*
+				case prev == ' ' || prev == '\t':
+					return i + leftMarginSize, true
+				case isNonSpaceSeparator(curr) && isLetterOrNumber(prev):
+					return i + leftMarginSize, true
+				case isNonSpaceSeparator(prev):
+					return i + leftMarginSize, true
+			*/
+		}
+	}
+	return -1, false
+}
+
+func (l *Line) nnextWordPos(sepFound bool) (int, bool) {
 	for i := bufPos.x; i < len(l.runes); i++ {
 		r := l.runes[i]
 		switch {
@@ -481,14 +616,14 @@ func (l *Line) nextTabStopFromIndex(x int) int {
 }
 
 func (d *Display) moveCursorDown() {
-	if d.cursor75PercentDown() && d.canScrollDown() {
+	if d.canScrollDown() {
 		d.scrollDown()
 		return
 	}
-	if cur.y == d.BufWindow.length()-1 {
+	if cur.y == d.bufWindow.size-1 {
 		return
 	}
-	nextLineLength := d.BufWindow.getLine(cur.y+1).length() + leftMarginSize
+	nextLineLength := d.bufWindow.line(cur.y+1).length() + leftMarginSize
 	if nextLineLength < cur.x {
 		cur.x = nextLineLength
 	}
@@ -500,14 +635,13 @@ func (d *Display) cursor75PercentDown() bool {
 }
 
 func (d *Display) scrollDown() {
-	start := d.BufWindow.startIdx + 1
 	d.clearBufWindow()
-	d.setBufWindow(start)
-	d.displayBufWindow()
+	d.bufWindow.update(d.bufWindow.bufIdx + 1)
+	d.setBufWindow()
 }
 
 func (d *Display) canScrollDown() bool {
-	return d.BufWindow.lastLine() != d.ActiveBuf.lastLine()
+	return d.bufWindow.lastLine() != d.ActiveBuf.lastLine() && d.cursor75PercentDown()
 }
 
 func (b *Buffer) lastLine() *Line {
@@ -515,7 +649,7 @@ func (b *Buffer) lastLine() *Line {
 }
 
 func (d *Display) clearBufWindow() {
-	for i := range d.BufWindow.length() {
+	for i := range d.bufWindow.size {
 		d.clearLineByIndex(i)
 	}
 }
@@ -524,11 +658,11 @@ func (d *Display) moveCursorUp() {
 	if cur.y == 0 {
 		return
 	}
-	if d.cursor25PercentUp() && d.canScrollUp() {
+	if d.canScrollUp() {
 		d.scrollUp()
 		return
 	}
-	prevLineLength := d.BufWindow.getLine(cur.y-1).length() + leftMarginSize
+	prevLineLength := d.bufWindow.line(cur.y-1).length() + leftMarginSize
 	if prevLineLength < cur.x {
 		cur.x = prevLineLength
 	}
@@ -540,18 +674,17 @@ func (d *Display) cursor25PercentUp() bool {
 }
 
 func (d *Display) canScrollUp() bool {
-	return d.BufWindow.content.lines[0] != d.ActiveBuf.content.lines[0]
+	return d.bufWindow.lines[0] != d.ActiveBuf.content.lines[0] && d.cursor25PercentUp()
 }
 
 func (d *Display) scrollUp() {
-	start := d.BufWindow.startIdx - 1
 	d.clearBufWindow()
-	d.setBufWindow(start)
-	d.displayBufWindow()
+	d.bufWindow.update(d.bufWindow.bufIdx - 1)
+	d.setBufWindow()
 }
 
 func (d *Display) moveCursorRight() {
-	if cur.x == d.BufWindow.currLine().length()+leftMarginSize {
+	if cur.x == d.ActiveBuf.currLine().length()+leftMarginSize {
 		return
 	}
 	cur.x++
@@ -583,29 +716,39 @@ func (d *Display) runInsertMode(ev tcell.Event) {
 }
 
 func (d *Display) handleKeyEnter() {
-	d.shiftLinesDown()
+	d.clearLinesToEOF()
+	content := d.ActiveBuf.content
+	newLine := content.newLineFromKeyEnter()
+	content.insertNewLine(newLine)
+	if d.cursor75PercentDown() {
+		d.scrollDown()
+		return
+	}
+	d.reRenderLinesToEOF()
+	d.setLineNumbers()
+	d.bufWindow.resetLines()
 	cur.x = leftMarginSize
 	cur.y++
 }
 
 func (d *Display) shiftLinesDown() {
-	content := d.BufWindow.content
+	content := d.ActiveBuf.content
 	d.clearLinesToEOF()
 	newLine := content.newLineFromKeyEnter()
 	content.insertNewLine(newLine)
 	d.reRenderLinesToEOF()
 	d.setLineNumbers()
+	d.bufWindow.resetLines()
 }
 
 func (d *Display) clearLinesToEOF() {
-	for i := cur.y; i < d.BufWindow.length(); i++ {
+	for i := cur.y; i < len(d.bufWindow.lines); i++ {
 		d.clearLineByIndex(i)
 	}
 }
 
 func (d *Display) clearLineByIndex(idx int) {
-	buf := d.BufWindow
-	line := buf.content.lines[idx]
+	line := d.bufWindow.lines[idx]
 	displayLineLength := line.length() + leftMarginSize
 	for i := leftMarginSize; i < displayLineLength; i++ {
 		d.Screen.SetContent(i, idx, ' ', nil, d.BufStyle)
@@ -614,7 +757,7 @@ func (d *Display) clearLineByIndex(idx int) {
 
 func (la *LineArray) newLineFromKeyEnter() *Line {
 	newLine := newLine()
-	newLine.runes = la.lines[cur.y].extractRestOfLine()
+	newLine.runes = la.lines[bufPos.y].extractRestOfLine()
 	return newLine
 }
 
@@ -625,26 +768,26 @@ func (l *Line) extractRestOfLine() []rune {
 }
 
 func (la *LineArray) insertNewLine(line *Line) {
-	if cur.y == len(la.lines)-1 {
+	if bufPos.y == len(la.lines)-1 {
 		la.lines = append(la.lines, line)
 		return
 	}
 	la.lines = append(la.lines, nil)
-	copy(la.lines[cur.y+2:], la.lines[cur.y+1:])
-	la.lines[cur.y+1] = line
+	copy(la.lines[bufPos.y+2:], la.lines[bufPos.y+1:])
+	la.lines[bufPos.y+1] = line
 }
 
 func (d *Display) reRenderLinesToEOF() {
-	for i := cur.y; i < d.BufWindow.length(); i++ {
+	for i := cur.y; i < d.bufWindow.length(); i++ {
 		d.reRenderLine(i)
 	}
 }
 
-func (d *Display) reRenderLine(idx int) {
-	line := d.BufWindow.getLine(idx)
+func (d *Display) reRenderLine(y int) {
+	line := d.bufWindow.line(y)
 	for i, r := range line.runes {
 		x := i + leftMarginSize
-		d.Screen.SetContent(x, idx, r, nil, d.BufStyle)
+		d.Screen.SetContent(x, y, r, nil, d.BufStyle)
 	}
 }
 func (d *Display) handleKeyBackspace() {
@@ -655,13 +798,14 @@ func (d *Display) handleKeyBackspace() {
 		d.backspaceToPrevLine()
 	default:
 		cur.x--
-		setBufPos()
+		d.setBufPos()
 		d.backspaceChar()
 	}
 }
 
 func (d *Display) backspaceToPrevLine() {
 	cur.y--
+	d.setBufPos()
 	prevLineLength := d.shiftLinesUp()
 	d.reRenderLinesToEOF()
 	d.setLineNumbers()
@@ -669,17 +813,21 @@ func (d *Display) backspaceToPrevLine() {
 }
 
 func (d *Display) shiftLinesUp() int {
-	content := d.BufWindow.content
+	buf := d.ActiveBuf
+	lines := buf.content.lines
+	line := d.ActiveBuf.currLine()
 	d.clearLinesToEOF()
-	ogLineLength := d.BufWindow.getLine(cur.y).length()
-	content.lines[cur.y].runes = append(content.lines[cur.y].runes, content.lines[cur.y+1].runes...)
-	content.lines = append(content.lines[:cur.y+1], content.lines[cur.y+2:]...)
+	idx := bufPos.y
+	ogLineLength := line.length()
+	line.runes = append(line.runes, lines[idx+1].runes...)
+	buf.content.lines = append(lines[:idx+1], lines[idx+2:]...)
+	d.bufWindow.resetLines()
 	return ogLineLength
 }
 
 func (d *Display) backspaceChar() {
 	d.clearCurrLine()
-	d.BufWindow.removeRune()
+	d.ActiveBuf.removeRune()
 	d.reRenderLine(cur.y)
 }
 
@@ -688,7 +836,7 @@ func (d *Display) clearCurrLine() {
 }
 
 func (b *Buffer) removeRune() {
-	line := b.getLine(cur.y)
+	line := b.getLine(bufPos.y)
 	r := line.runes[bufPos.x]
 	if r == '\t' {
 		line.removeTabRunes()
@@ -714,7 +862,7 @@ func (l *Line) removeTabRunes() {
 }
 
 func (d *Display) handleKeyTab() {
-	d.BufWindow.addKeyTab()
+	d.ActiveBuf.addKeyTab()
 	d.clearCurrLine()
 	d.reRenderLine(cur.y)
 	cur.x += nextTabStopOffset()
@@ -722,7 +870,7 @@ func (d *Display) handleKeyTab() {
 
 func (b *Buffer) addKeyTab() {
 	tab := createTabRunes()
-	line := b.getLine(cur.y)
+	line := b.getLine(bufPos.y)
 
 	for i := 0; i < len(tab); i++ {
 		line.runes = append(line.runes, ' ')
@@ -753,20 +901,20 @@ func nextTabStopOffset() int {
 }
 
 func (d *Display) setRune(r rune) {
-	d.BufWindow.addRune(r)
+	d.ActiveBuf.addRune(r)
 	d.reRenderLineAtCursor()
 	cur.x++
 }
 
 func (b *Buffer) addRune(r rune) {
-	line := b.getLine(cur.y)
+	line := b.getLine(bufPos.y)
 	line.runes = append(line.runes, ' ')
 	copy(line.runes[bufPos.x+1:], line.runes[bufPos.x:])
 	line.runes[bufPos.x] = r
 }
 
 func (d *Display) reRenderLineAtCursor() {
-	line := d.BufWindow.getLine(cur.y)
+	line := d.bufWindow.line(cur.y)
 	d.clearLineFromCursor(line)
 	d.resetContentFromCursor(line)
 }
@@ -790,12 +938,12 @@ func (b *Buffer) getLine(idx int) *Line {
 }
 
 func (b *Buffer) currLine() *Line {
-	return b.getLine(cur.y)
+	return b.getLine(bufPos.y)
 }
 
 func (d *Display) setLineNumbers() {
 	d.clearLineNumbers()
-	start := d.BufWindow.startIdx
+	start := d.bufWindow.bufIdx
 	for i := 0; i < d.height-1; i++ {
 		lineNum := i + start + 1
 		digits := splitDigits(lineNum)
@@ -826,8 +974,8 @@ func (d *Display) clearLineNumbers() {
 
 func (d *Display) setStatusBar() {
 	d.clearStatusBar()
-	line := d.BufWindow.currLine()
-	currLineNo := d.BufWindow.startIdx + cur.y + 1
+	line := d.bufWindow.line(cur.y)
+	currLineNo := bufPos.y + 1
 	lineCount := d.ActiveBuf.length()
 	char := ""
 	if bufPos.x < len(line.runes) {
@@ -842,6 +990,9 @@ func (d *Display) setStatusBar() {
 	))
 	for i, r := range status {
 		d.Screen.SetContent(i, d.height-1, r, nil, d.StatusBarStyle)
+	}
+	for i := len(status); i < d.width; i++ {
+		d.Screen.SetContent(i, d.height-1, ' ', nil, d.StatusBarStyle)
 	}
 	d.StatusBar = status
 }
@@ -876,9 +1027,9 @@ func splitDigits(count int) []rune {
 }
 
 type Buffer struct {
-	content  *LineArray
-	path     string
-	startIdx int
+	content     *LineArray
+	path        string
+	windowStart int
 }
 
 func newBuffer() *Buffer {
@@ -891,9 +1042,13 @@ func (b *Buffer) length() int {
 	return len(b.content.lines)
 }
 
-func setBufPos() {
+func (b *Buffer) appendLine(line *Line) {
+	b.content.lines = append(b.content.lines, line)
+}
+
+func (d *Display) setBufPos() {
 	bufPos.x = cur.x - leftMarginSize
-	bufPos.y = cur.y
+	bufPos.y = cur.y + d.bufWindow.bufIdx
 }
 
 type LineArray struct {

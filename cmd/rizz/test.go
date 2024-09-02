@@ -2,17 +2,21 @@ package main
 
 import "fmt"
 
-func testFunc() {
+func testFunc0() {
+	fmt.Println("this is a test for insert new blank line")
+}
+func testFunc1() {
 	fmt.Println("this is a test")
 	fmt.Println("ok what if we add a line here!")
 	fmt.Println("well i'm going to add a line here too!")
 	fmt.Println("added an insert new line function!")
 }
 
+func testFunc2() {
+	fmt.Println("for some reason appending to the end of the file is kind of weird man!")
+}
 func testFunc3() {
-	for i := range 69 {
-		fmt.Println("Let's count up to 69! we're on number:", i)
-	}
+	fmt.Println("Editing from rizz. We'll see what happens")
 }
 
 func testFunc4() {
@@ -44,4 +48,13 @@ func testFunc7() {
 
 func testFunc8() {
 	fmt.Println("Ok this should REALLY be enough now")
+}
+
+func testFunc9() {
+	fmt.Println("We're just adding some more lines to look at the scroll feature more closely")
+}
+
+func testFunc10() {
+	fmt.Println("It seems like i've finally fixed this bug hooray!")
+	fmt.Println("Well the scroll up and down half a window thing is not really working very well ha")
 }
