@@ -8,6 +8,134 @@ import (
 	"github.com/gdamore/tcell/v2"
 )
 
+func TestHandleKeyEnter(t *testing.T) {
+	// tests pressing Key Enter at line 0 at bufCur.x = 0
+	d1 := NewDisplay()
+	initTestDisplay(d1)
+	d1.ActiveBuf.addTestLines(createTestLines(10))
+	exp1 := []string{""}
+	exp1 = append(exp1, createTestLines(10)...)
+
+	//tests pressing Key Enter at last line at bufCur.x = 0
+	d2 := NewDisplay()
+	initTestDisplay(d2)
+	d2.ActiveBuf.addTestLines(createTestLines(10))
+	exp2 := createTestLines(10)
+	exp2 = append(exp2, exp2[9])
+	exp2[9] = ""
+
+	// tests pressing Key Enter in a middle line at bufCur.x = 0
+	d3 := NewDisplay()
+	initTestDisplay(d3)
+	d3.ActiveBuf.addTestLines(createTestLines(10))
+	exp3 := createTestLines(11)
+	copy(exp3[6:], exp3[5:])
+	exp3[5] = ""
+
+	// tests pressing Key Enter at end of buffer where index > bufWindow size at bufCur.x = 0
+	d4 := NewDisplay()
+	initTestDisplay(d4)
+	d4.ActiveBuf.addTestLines(createTestLines(99))
+	expBuf4 := createTestLines(99)
+	expBuf4 = append(expBuf4, expBuf4[98])
+	expBuf4[98] = ""
+	expWindow4 := append([]string(nil), expBuf4[51:]...)
+
+	// tests pressing Key Enter at end of buffer where index > bufWindow size at bufCur.x = len(line.runes)
+	d5 := NewDisplay()
+	initTestDisplay(d5)
+	d5.ActiveBuf.addTestLines(createTestLines(99))
+	expBuf5 := createTestLines(99)
+	expBuf5 = append(expBuf5, "")
+	expWindow5 := append([]string(nil), expBuf5[51:]...)
+	test5CurX := leftMarginSize + len(expBuf5[98])
+
+	// tests pressing Key Enter in the middle of a file in the middle of a line
+	d6 := NewDisplay()
+	initTestDisplay(d6)
+	d6.ActiveBuf.addTestLines(createTestLines(99))
+	expBuf6 := createTestLines(99)
+	expBuf6 = append(expBuf6, "")
+	copy(expBuf6[76:], expBuf6[75:])
+	expBuf6[75] = expBuf6[75][:5]
+	expBuf6[76] = expBuf6[76][5:]
+	expWindow6 := append([]string(nil), expBuf6[50:len(expBuf6)-1]...)
+	test6CurX := leftMarginSize + 5
+
+	tests := []struct {
+		display   *Display
+		x, y      int
+		expBuf    []string
+		expWindow []string
+	}{
+		{
+			d1,
+			leftMarginSize, 0,
+			exp1,
+			exp1,
+		},
+		{
+			d2,
+			leftMarginSize, 9,
+			exp2,
+			exp2,
+		},
+		{
+			d3,
+			leftMarginSize, 5,
+			exp3,
+			exp3,
+		},
+		{
+			d4,
+			leftMarginSize, 98,
+			expBuf4,
+			expWindow4,
+		},
+		{
+			d5,
+			test5CurX, 98,
+			expBuf5,
+			expWindow5,
+		},
+		{
+			d6,
+			test6CurX, 75,
+			expBuf6,
+			expWindow6,
+		},
+	}
+	count := 0
+	for _, tt := range tests {
+		count++
+		tt.display.bufWindow.update(tt.y)
+		cur.y = tt.y - tt.display.bufWindow.bufIdx
+		cur.x = tt.x
+		tt.display.setBufPos()
+
+		tt.display.handleKeyEnter()
+		if tt.display.ActiveBuf.length() != len(tt.expBuf) {
+			t.Fatalf("length should be %d. Got %d", len(tt.expBuf), tt.display.ActiveBuf.length())
+		}
+
+		for i := range tt.expBuf {
+			exp := tt.expBuf[i]
+			res := string(tt.display.ActiveBuf.content.lines[i].runes)
+			if exp != res {
+				t.Fatalf("FAIL expBuf: line should be: '%s'. Got'%s'", exp, res)
+			}
+		}
+
+		for i := range tt.expWindow {
+			exp := tt.expWindow[i]
+			res := string(tt.display.bufWindow.lines[i].runes)
+			if exp != res {
+				t.Fatalf("FAIL windowBuf: line should be: '%s'. Got'%s'", exp, res)
+			}
+		}
+	}
+}
+
 func TestInsertBlankLine(t *testing.T) {
 	// test insertion of blank line when cursor is on the first line
 	d1 := NewDisplay()
@@ -139,11 +267,11 @@ func TestDeleteLine(t *testing.T) {
 	d2.ActiveBuf.addTestLines(createTestLines(10))
 	d2.bufWindow.update(0)
 
-	// tests deletion of line with an index greater than the window size
+	// tests deletion of line where the bufWindow cannot be scrolled down anymore
 	d3 := NewDisplay()
 	initTestDisplay(d3)
-	d3TestLines := createTestLines(100)
-	d3Expected := append(d3TestLines[:82], d3TestLines[83:]...)
+	d3Expected := createTestLines(100)
+	d3Expected[82] = ""
 	d3.ActiveBuf.addTestLines(createTestLines(100))
 	d3.bufWindow.update(0)
 

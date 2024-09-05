@@ -5,6 +5,7 @@ import "fmt"
 func testFunc0() {
 	fmt.Println("this is a test for insert new blank line")
 }
+
 func testFunc1() {
 	fmt.Println("this is a test")
 	fmt.Println("ok what if we add a line here!")
@@ -12,9 +13,6 @@ func testFunc1() {
 	fmt.Println("added an insert new line function!")
 }
 
-func testFunc2() {
-	fmt.Println("for some reason appending to the end of the file is kind of weird man!")
-}
 func testFunc3() {
 	fmt.Println("Editing from rizz. We'll see what happens")
 }
@@ -57,4 +55,8 @@ func testFunc9() {
 func testFunc10() {
 	fmt.Println("It seems like i've finally fixed this bug hooray!")
 	fmt.Println("Well the scroll up and down half a window thing is not really working very well ha")
+}
+
+func testFunc11() {
+	fmt.Println("testing again... oh dear")
 }

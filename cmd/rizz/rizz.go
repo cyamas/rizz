@@ -163,7 +163,7 @@ func (bw *BufWindow) update(idx int) {
 
 func (bw *BufWindow) resetLines() {
 	start := bw.bufIdx
-	end := bw.bufIdx + bw.length() - 1
+	end := bw.bufIdx + bw.length()
 	bw.lines = append([]*Line(nil), bw.buf.content.lines[start:end]...)
 }
 
@@ -277,6 +277,9 @@ func (d *Display) deleteLine() {
 		d.bufWindow.update(d.bufWindow.bufIdx)
 		return
 	}
+	if d.bufWindow.bufIdx == d.ActiveBuf.length()-d.bufWindow.size {
+		return
+	}
 	d.shiftLinesUp()
 	d.reRenderLinesToEOF()
 	cur.x = leftMarginSize
@@ -313,7 +316,7 @@ func (d *Display) runNewMode(ev tcell.Event) {
 
 func (d *Display) insertBlankLine() {
 	line := newLine()
-	d.clearLinesToEOF()
+	d.clearLinesToEOW()
 	d.ActiveBuf.content.insertNewLine(line)
 	if d.cursor75PercentDown() {
 		d.scrollDown()
@@ -649,7 +652,7 @@ func (b *Buffer) lastLine() *Line {
 }
 
 func (d *Display) clearBufWindow() {
-	for i := range d.bufWindow.size {
+	for i := range len(d.bufWindow.lines) {
 		d.clearLineByIndex(i)
 	}
 }
@@ -716,7 +719,7 @@ func (d *Display) runInsertMode(ev tcell.Event) {
 }
 
 func (d *Display) handleKeyEnter() {
-	d.clearLinesToEOF()
+	d.clearBufWindow()
 	content := d.ActiveBuf.content
 	newLine := content.newLineFromKeyEnter()
 	content.insertNewLine(newLine)
@@ -724,16 +727,15 @@ func (d *Display) handleKeyEnter() {
 		d.scrollDown()
 		return
 	}
-	d.reRenderLinesToEOF()
-	d.setLineNumbers()
-	d.bufWindow.resetLines()
+	d.bufWindow.update(d.bufWindow.bufIdx)
+	d.setBufWindow()
 	cur.x = leftMarginSize
 	cur.y++
 }
 
 func (d *Display) shiftLinesDown() {
 	content := d.ActiveBuf.content
-	d.clearLinesToEOF()
+	d.clearLinesToEOW()
 	newLine := content.newLineFromKeyEnter()
 	content.insertNewLine(newLine)
 	d.reRenderLinesToEOF()
@@ -741,7 +743,7 @@ func (d *Display) shiftLinesDown() {
 	d.bufWindow.resetLines()
 }
 
-func (d *Display) clearLinesToEOF() {
+func (d *Display) clearLinesToEOW() {
 	for i := cur.y; i < len(d.bufWindow.lines); i++ {
 		d.clearLineByIndex(i)
 	}
@@ -816,12 +818,12 @@ func (d *Display) shiftLinesUp() int {
 	buf := d.ActiveBuf
 	lines := buf.content.lines
 	line := d.ActiveBuf.currLine()
-	d.clearLinesToEOF()
+	d.clearLinesToEOW()
 	idx := bufPos.y
 	ogLineLength := line.length()
 	line.runes = append(line.runes, lines[idx+1].runes...)
 	buf.content.lines = append(lines[:idx+1], lines[idx+2:]...)
-	d.bufWindow.resetLines()
+	d.bufWindow.update(d.bufWindow.bufIdx)
 	return ogLineLength
 }
 
