@@ -32,6 +32,18 @@ var modes = map[int]string{
 	New:    "New",
 }
 
+var highlights = map[string]string{
+	"package_clause":       "blue",
+	"import_declaration":   "green",
+	"function_declaration": "purple",
+}
+
+var styles = map[string]tcell.Style{
+	"package_clause":       tcell.StyleDefault.Foreground(tcell.ColorLimeGreen).Background(tcell.ColorBlack),
+	"import_declaration":   tcell.StyleDefault.Foreground(tcell.ColorBlue).Background(tcell.ColorBlack),
+	"function_declaration": tcell.StyleDefault.Foreground(tcell.ColorRed).Background(tcell.ColorBlack),
+}
+
 type cell struct {
 	x, y int
 }

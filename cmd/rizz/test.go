@@ -23,8 +23,7 @@ func testFunc4() {
 }
 
 func testFunc5() {
-	fmt.Println("Now we will try to introduce scrolling please!")
-	fmt.Println("Yes this is the way")
+	fmt.Println("another manual test on the mac")
 }
 
 func testFunc6() {
@@ -34,6 +33,7 @@ func testFunc6() {
 			break
 		}
 		fmt.Println("this will print 10 times I believe")
+		fmt.Println("here is antoher test on the old macbook air.")
 		fmt.Println("probably should use printf but oh well")
 		fmt.Println("this works fine too I think.")
 		fmt.Println("Wow this will all also print 10 times.")
@@ -45,7 +45,7 @@ func testFunc7() {
 }
 
 func testFunc8() {
-	fmt.Println("Ok this should REALLY be enough now")
+	fmt.Println("manually testing on mac to make sure it still works!")
 }
 
 func testFunc9() {
@@ -59,4 +59,8 @@ func testFunc10() {
 
 func testFunc11() {
 	fmt.Println("testing again... oh dear")
+}
+
+func testFunc12() {
+	fmt.Println("another test just to see if we can append to the end of the file nicely")
 }
