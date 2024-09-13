@@ -2,15 +2,15 @@ package main
 
 import "fmt"
 
-func testFunc0() {
-	fmt.Println("this is a test for insert new blank line")
-}
-
 func testFunc1() {
 	fmt.Println("this is a test")
 	fmt.Println("ok what if we add a line here!")
 	fmt.Println("well i'm going to add a line here too!")
 	fmt.Println("added an insert new line function!")
+}
+
+func testFunc2() {
+	fmt.Println("hello there this is another test!")
 }
 
 func testFunc3() {
@@ -63,4 +63,16 @@ func testFunc11() {
 
 func testFunc12() {
 	fmt.Println("another test just to see if we can append to the end of the file nicely")
+}
+
+func testFunc13() {
+	fmt.Println("moved some files around. Testing to see if this still works")
+}
+
+func testFunc14() {
+	fmt.Println("test for auto indent")
+}
+
+func testFunc15(x int) {
+	fmt.Println("hello ", x)
 }
