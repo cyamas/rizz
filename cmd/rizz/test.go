@@ -6,6 +6,10 @@ type TestStruct struct {
 	x, y int
 }
 
+func hello() {
+	fmt.Println("hello world")
+}
+
 func testPrint() {
 	fmt.Println("ok what the hell")
 }
