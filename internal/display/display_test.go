@@ -5,14 +5,24 @@ import (
 	"log"
 	"testing"
 
+	"github.com/cyamas/rizz/internal/highlighter"
+	"github.com/cyamas/rizz/internal/highlighter/lexer"
+	"github.com/cyamas/rizz/internal/highlighter/token"
 	"github.com/gdamore/tcell/v2"
 )
+
+func TestParseLineForHighlighting(t *testing.T) {
+
+}
 
 func TestAutoIndentFromAutoClose(t *testing.T) {
 	d1 := NewDisplay()
 	initTestDisplay(d1)
 	line1 := "{}"
-	d1.ActiveBuf.content.lines[0].runes = []rune(line1)
+	d1Content := d1.ActiveBuf.content
+	d1Content.lines[0].runes = []rune(line1)
+	d1Content.lines[0].highlight([]token.TokenType{token.TYPE_NONE})
+
 	expBuf1 := []string{
 		"{",
 		"/t      /t",
@@ -47,7 +57,7 @@ func TestAutoIndentFromAutoClose(t *testing.T) {
 func TestAutoIndent(t *testing.T) {
 	d1 := NewDisplay()
 	initTestDisplay(d1)
-	d1.ActiveBuf.addTestLines(createTestLines(1))
+	d1.ActiveBuf.addTestLines(createTestLines(1), d1.Highlighter)
 	d1.ActiveBuf.currLine().addKeyTab()
 	x1 := LeftMarginSize + d1.ActiveBuf.currLine().length()
 	exp1 := createTestLines(1)
@@ -56,7 +66,7 @@ func TestAutoIndent(t *testing.T) {
 
 	d2 := NewDisplay()
 	initTestDisplay(d2)
-	d2.ActiveBuf.addTestLines(createTestLines(1))
+	d2.ActiveBuf.addTestLines(createTestLines(1), d2.Highlighter)
 	d2.ActiveBuf.content.lines[0].runes = append(d2.ActiveBuf.content.lines[0].runes, '{')
 	x2 := LeftMarginSize + d2.ActiveBuf.content.lines[0].length()
 	exp2 := createTestLines(1)
@@ -115,14 +125,14 @@ func TestHandleKeyEnter(t *testing.T) {
 	// tests pressing Key Enter at line 0 at bufCur.X = 0
 	d1 := NewDisplay()
 	initTestDisplay(d1)
-	d1.ActiveBuf.addTestLines(createTestLines(10))
+	d1.ActiveBuf.addTestLines(createTestLines(10), d1.Highlighter)
 	exp1 := []string{""}
 	exp1 = append(exp1, createTestLines(10)...)
 
 	//tests pressing Key Enter at last line at bufCur.X = 0
 	d2 := NewDisplay()
 	initTestDisplay(d2)
-	d2.ActiveBuf.addTestLines(createTestLines(10))
+	d2.ActiveBuf.addTestLines(createTestLines(10), d2.Highlighter)
 	exp2 := createTestLines(10)
 	exp2 = append(exp2, exp2[9])
 	exp2[9] = ""
@@ -130,7 +140,7 @@ func TestHandleKeyEnter(t *testing.T) {
 	// tests pressing Key Enter in a middle line at bufCur.X = 0
 	d3 := NewDisplay()
 	initTestDisplay(d3)
-	d3.ActiveBuf.addTestLines(createTestLines(10))
+	d3.ActiveBuf.addTestLines(createTestLines(10), d3.Highlighter)
 	exp3 := createTestLines(11)
 	copy(exp3[6:], exp3[5:])
 	exp3[5] = ""
@@ -138,7 +148,7 @@ func TestHandleKeyEnter(t *testing.T) {
 	// tests pressing Key Enter at end of buffer where index > bufWindow size at bufCur.X = 0
 	d4 := NewDisplay()
 	initTestDisplay(d4)
-	d4.ActiveBuf.addTestLines(createTestLines(99))
+	d4.ActiveBuf.addTestLines(createTestLines(99), d4.Highlighter)
 	expBuf4 := createTestLines(99)
 	expBuf4 = append(expBuf4, expBuf4[98])
 	expBuf4[98] = ""
@@ -147,7 +157,7 @@ func TestHandleKeyEnter(t *testing.T) {
 	// tests pressing Key Enter at end of buffer where index > bufWindow size at bufCur.X = len(line.runes)
 	d5 := NewDisplay()
 	initTestDisplay(d5)
-	d5.ActiveBuf.addTestLines(createTestLines(99))
+	d5.ActiveBuf.addTestLines(createTestLines(99), d5.Highlighter)
 	expBuf5 := createTestLines(99)
 	expBuf5 = append(expBuf5, "")
 	expWindow5 := append([]string(nil), expBuf5[51:]...)
@@ -156,7 +166,7 @@ func TestHandleKeyEnter(t *testing.T) {
 	// tests pressing Key Enter in the middle of a file in the middle of a line
 	d6 := NewDisplay()
 	initTestDisplay(d6)
-	d6.ActiveBuf.addTestLines(createTestLines(99))
+	d6.ActiveBuf.addTestLines(createTestLines(99), d6.Highlighter)
 	expBuf6 := createTestLines(99)
 	expBuf6 = append(expBuf6, "")
 	copy(expBuf6[76:], expBuf6[75:])
@@ -247,7 +257,7 @@ func TestInsertBlankLine(t *testing.T) {
 	d1Expected := []string{d1TestLines[0]}
 	d1Expected = append(d1Expected, "")
 	d1Expected = append(d1Expected, d1TestLines[1:]...)
-	d1.ActiveBuf.addTestLines(createTestLines(10))
+	d1.ActiveBuf.addTestLines(createTestLines(10), d1.Highlighter)
 	d1.bufWindow.update(0)
 
 	// tests insertion of blank line at end of file when file < window size
@@ -255,7 +265,7 @@ func TestInsertBlankLine(t *testing.T) {
 	initTestDisplay(d2)
 	d2Expected := createTestLines(10)
 	d2Expected = append(d2Expected, "")
-	d2.ActiveBuf.addTestLines(createTestLines(10))
+	d2.ActiveBuf.addTestLines(createTestLines(10), d2.Highlighter)
 	d2.bufWindow.update(0)
 
 	// tests insertion of blank line in middle of file
@@ -265,7 +275,7 @@ func TestInsertBlankLine(t *testing.T) {
 	d3Expected := append([]string(nil), d3TestLines[:6]...)
 	d3Expected = append(d3Expected, "")
 	d3Expected = append(d3Expected, d3TestLines[6:]...)
-	d3.ActiveBuf.addTestLines(createTestLines(10))
+	d3.ActiveBuf.addTestLines(createTestLines(10), d3.Highlighter)
 	d3.bufWindow.update(0)
 
 	// tests insertion of blank line at end of file when file > window size
@@ -274,7 +284,7 @@ func TestInsertBlankLine(t *testing.T) {
 	d4ExpBuf := createTestLines(100)
 	d4ExpBuf = append(d4ExpBuf, "")
 	d4ExpWindow := append([]string(nil), d4ExpBuf[52:]...)
-	d4.ActiveBuf.addTestLines(createTestLines(100))
+	d4.ActiveBuf.addTestLines(createTestLines(100), d4.Highlighter)
 	d4.bufWindow.update(0)
 
 	tests := []struct {
@@ -359,7 +369,7 @@ func TestDeleteLine(t *testing.T) {
 	d1 := NewDisplay()
 	initTestDisplay(d1)
 	d1TestLines := createTestLines(10)
-	d1.ActiveBuf.addTestLines(createTestLines(10))
+	d1.ActiveBuf.addTestLines(createTestLines(10), d1.Highlighter)
 	d1.bufWindow.update(0)
 
 	//tests deletion of some middle line
@@ -367,7 +377,7 @@ func TestDeleteLine(t *testing.T) {
 	initTestDisplay(d2)
 	d2testLines := createTestLines(10)
 	d2Expected := append(d2testLines[:4], d2testLines[5:]...)
-	d2.ActiveBuf.addTestLines(createTestLines(10))
+	d2.ActiveBuf.addTestLines(createTestLines(10), d2.Highlighter)
 	d2.bufWindow.update(0)
 
 	// tests deletion of line where the bufWindow cannot be scrolled down anymore
@@ -375,7 +385,7 @@ func TestDeleteLine(t *testing.T) {
 	initTestDisplay(d3)
 	d3Expected := createTestLines(100)
 	d3Expected[82] = ""
-	d3.ActiveBuf.addTestLines(createTestLines(100))
+	d3.ActiveBuf.addTestLines(createTestLines(100), d3.Highlighter)
 	d3.bufWindow.update(0)
 
 	tests := []struct {
@@ -409,9 +419,7 @@ func TestDeleteLine(t *testing.T) {
 			d3Expected[51:],
 		},
 	}
-	count := 0
-	for _, tt := range tests {
-		count++
+	for i, tt := range tests {
 		Cur.X = LeftMarginSize
 		tt.display.bufWindow.update(tt.idx)
 		Cur.Y = tt.idx - tt.display.bufWindow.bufIdx
@@ -423,12 +431,12 @@ func TestDeleteLine(t *testing.T) {
 			bufRes = append(bufRes, string(line.runes))
 		}
 		if len(bufRes) != len(tt.expBufLines) {
-			fmt.Println("len(bufRes) FAIL TEST ", count)
+			fmt.Println("len(bufRes) FAIL TEST ", i+1)
 			t.Fatalf("len should be %d. Got %d", len(tt.expBufLines), len(bufRes))
 		}
 		for i := range tt.expBufLines {
 			if bufRes[i] != tt.expBufLines[i] {
-				fmt.Println("bufRes FAIL TEST ", count)
+				fmt.Println("bufRes FAIL TEST ", i+1)
 				printLines(tt.expBufLines, bufRes)
 				t.Fatalf("line should be: %s. Got %s", tt.expBufLines[i], bufRes[i])
 			}
@@ -440,12 +448,12 @@ func TestDeleteLine(t *testing.T) {
 		}
 		if len(windowRes) != len(tt.expWindowLines) {
 			printLines(tt.expWindowLines, windowRes)
-			fmt.Println("len(windowRes) FAIL TEST ", count)
+			fmt.Println("len(windowRes) FAIL TEST ", i+1)
 			t.Fatalf("len should be %d. Got %d", len(tt.expWindowLines), len(windowRes))
 		}
 		for i := range tt.expWindowLines {
 			if windowRes[i] != tt.expWindowLines[i] {
-				fmt.Println("windowRes FAIL TEST ", count)
+				fmt.Println("windowRes FAIL TEST ", i+1)
 				printLines(tt.expWindowLines, windowRes)
 				t.Fatalf("line should be: %s. Got %s", tt.expWindowLines[i], windowRes[i])
 			}
@@ -471,20 +479,25 @@ func createTestLines(num int) []string {
 	return testLines
 }
 
-func (b *Buffer) addTestLines(lines []string) {
+func (b *Buffer) addTestLines(lines []string, h *highlighter.Highlighter) {
+	var prevLine *Line
 	for _, l := range lines {
-		line := newLine()
+		line := newLine(h)
 		line.runes = []rune(l)
 		if b.length() == 1 && b.content.lines[0].length() == 0 {
+			line.highlight([]token.TokenType{token.TYPE_NONE})
 			b.content.lines[0] = line
+			prevLine = line
 			continue
 		}
+		line.highlight(prevLine.Context())
 		b.appendLine(line)
+		prevLine = line
 	}
 }
 
-func testLine(text string) *Line {
-	line := newLine()
+func testLine(text string, h *highlighter.Highlighter) *Line {
+	line := newLine(h)
 	line.runes = []rune(text)
 	return line
 }
@@ -524,8 +537,9 @@ func initTestDisplay(d *Display) {
 	d.Screen.SetStyle(style)
 	d.BufStyle = style
 	d.width, d.height = 200, 50
-	d.ActiveBuf = NewBuffer()
-	d.bufWindow = newBufWindow()
+	d.Highlighter = highlighter.New(lexer.New())
+	d.ActiveBuf = NewBuffer(d.Highlighter)
+	d.bufWindow = newBufWindow(d.height - 1)
 	d.InitBufWindow()
 	d.SetBufWindow()
 	d.setBufPos()
