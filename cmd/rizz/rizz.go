@@ -20,7 +20,7 @@ func main() {
 		}
 	}
 	defer quit()
-	d.ActiveBuf = display.NewBuffer()
+	d.ActiveBuf = display.NewBuffer(d.Highlighter)
 	if len(args) == 2 {
 		d.ActiveBuf.ReadFile(args[1])
 

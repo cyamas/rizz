@@ -2,6 +2,22 @@ package main
 
 import "fmt"
 
+type TestStruct struct {
+	x, y int
+}
+
+func testPrint() {
+	fmt.Println("ok what the hell")
+}
+
+func testFunc0() bool {
+	fmt.Println("split display.go file")
+	fmt.Println("Ok well there are some problems here!")
+	fmt.Println("Fixed the tests...for now")
+	fmt.Println("test again")
+	return true
+}
+
 func testFunc1() {
 	fmt.Println("this is a test")
 	fmt.Println("ok what if we add a line here!")
@@ -11,6 +27,7 @@ func testFunc1() {
 
 func testFunc2() {
 	fmt.Println("hello there this is another test!")
+	fmt.Println("hello again")
 }
 
 func testFunc3() {
@@ -31,6 +48,8 @@ func testFunc6() {
 	for {
 		if x > 10 {
 			break
+		} else {
+			fmt.Println("x is less than 10")
 		}
 		fmt.Println("this will print 10 times I believe")
 		fmt.Println("here is antoher test on the old macbook air.")
@@ -75,4 +94,12 @@ func testFunc14() {
 
 func testFunc15(x int) {
 	fmt.Println("hello ", x)
+}
+
+func testFunc16(x, y string) {
+	if x == y {
+		for _, ch := range x {
+			fmt.Println(ch)
+		}
+	}
 }
