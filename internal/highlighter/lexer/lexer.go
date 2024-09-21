@@ -370,7 +370,7 @@ func isDigit(ch byte) bool {
 
 func (l *Lexer) readIdentifier() string {
 	position := l.position
-	for isLetter(l.ch) || isDigit(l.ch) {
+	for isLetter(l.ch) || isDigit(l.ch) || (l.ch == '\'' && l.Context() == token.DBL_QUOTE) {
 		l.readChar()
 	}
 	return l.input[position:l.position]
