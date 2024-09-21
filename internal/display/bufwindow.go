@@ -14,11 +14,15 @@ type BufWindow struct {
 }
 
 func newBufWindow(size int) *BufWindow {
-	return &BufWindow{
+	bw := &BufWindow{
 		lines:       []*Line{},
 		highlighter: highlighter.New(lexer.New()),
 		size:        size,
 	}
+	for i := 0; i < bw.size; i++ {
+		bw.lines = append(bw.lines, newLine(bw.highlighter))
+	}
+	return bw
 }
 
 func (bw *BufWindow) length() int {

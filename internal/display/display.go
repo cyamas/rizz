@@ -1,13 +1,13 @@
 package display
 
 import (
-	"errors"
 	"fmt"
 	"log"
 	"unicode"
 
 	"github.com/cyamas/rizz/internal/highlighter"
 	"github.com/cyamas/rizz/internal/highlighter/lexer"
+	"github.com/cyamas/rizz/internal/highlighter/token"
 	"github.com/gdamore/tcell/v2"
 )
 
@@ -57,17 +57,19 @@ func (d *Display) SetBufWindow() {
 }
 
 func (d *Display) windowAtBottom() bool {
-	return d.bufWindow.lastLine() == d.ActiveBuf.lastLine()
+	return d.bufWindow.lines[Cur.Y] == d.ActiveBuf.lastLine()
 }
 
 func (d *Display) InitBufWindow() {
 	bw := newBufWindow(d.height - 1)
 	d.bufWindow = bw
 	bw.buf = d.ActiveBuf
-	if bw.buf.length() == 1 && bw.buf.getLine(0).length() == 0 {
-		return
+	for i, line := range d.ActiveBuf.content.lines {
+		if i >= d.bufWindow.size {
+			break
+		}
+		d.bufWindow.lines[i] = line
 	}
-	bw.lines = append([]*Line(nil), d.ActiveBuf.content.lines[:bw.size]...)
 }
 
 type Display struct {
@@ -162,6 +164,7 @@ func (d *Display) deleteLine() {
 	if Cur.Y == d.bufWindow.length()-1 {
 		d.deleteLastLine()
 		d.bufWindow.update(d.bufWindow.bufIdx)
+		d.SetBufWindow()
 		return
 	}
 	if d.bufWindow.bufIdx == d.ActiveBuf.length()-d.bufWindow.size {
@@ -384,6 +387,9 @@ func nextTabStopFromIndex(x int) int {
 }
 
 func (d *Display) moveCursorDown() {
+	if Cur.Y == d.ActiveBuf.length()-1 {
+		return
+	}
 	if d.canScrollDown() {
 		d.scrollDown()
 		return
@@ -409,6 +415,9 @@ func (d *Display) scrollDown() {
 }
 
 func (d *Display) canScrollDown() bool {
+	if d.ActiveBuf.length() < d.bufWindow.size {
+		return false
+	}
 	return d.bufWindow.lastLine() != d.ActiveBuf.lastLine() && d.cursor75PercentDown()
 }
 
@@ -561,6 +570,7 @@ func (d *Display) backspaceToPrevLine() {
 	d.setLineNumbers()
 	Cur.X = prevLineLength + LeftMarginSize
 	if d.windowAtBottom() {
+		Cur.Y--
 		return
 	}
 	if d.canScrollUp() {
@@ -632,9 +642,9 @@ func (d *Display) setRune(r rune) {
 
 	d.clearCurrLine()
 	d.currLine().addRune(r)
-	prevLine, err := d.prevLine()
-	if err != nil {
-		d.currLine().highlight(d.currLine().Context())
+	prevLine, ok := d.prevLine()
+	if !ok {
+		d.currLine().highlight([]token.TokenType{token.TYPE_NONE})
 	} else {
 		d.currLine().highlight(prevLine.Context())
 	}
@@ -653,11 +663,11 @@ func (d *Display) setRune(r rune) {
 	}
 }
 
-func (d *Display) prevLine() (*Line, error) {
+func (d *Display) prevLine() (*Line, bool) {
 	if Cur.Y == 0 {
-		return nil, errors.New("no previous line")
+		return nil, false
 	}
-	return d.ActiveBuf.getLine(Cur.Y - 1), nil
+	return d.ActiveBuf.getLine(Cur.Y - 1), true
 }
 
 func (d *Display) currRune() rune {

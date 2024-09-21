@@ -255,6 +255,12 @@ func (l *Lexer) NextToken() token.Token {
 				l.ReplaceContext(token.FUNC_BODY)
 			case token.FUNC_NAME:
 				l.ReplaceContext(token.START_PARAMS)
+			case token.PARAM_NAME:
+				if isLetter(l.peekChar()) {
+					l.AddContext(token.PARAM_NAME)
+				}
+			case token.PARAM_TYPE:
+				l.RemoveContext()
 			case token.STRUCT:
 				l.AddContext(token.STRUCT)
 			case token.VAR_DECLARE:

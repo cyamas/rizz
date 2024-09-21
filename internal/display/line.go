@@ -14,7 +14,7 @@ type Line struct {
 }
 
 func newLine(h *highlighter.Highlighter) *Line {
-	line := &Line{runes: []rune{}, highlighter: h}
+	line := &Line{runes: []rune{}, context: []token.TokenType{token.TYPE_NONE}, highlighter: h}
 	return line
 }
 
@@ -57,7 +57,10 @@ var styles = map[string]tcell.Style{
 	token.ELSE:           tcell.StyleDefault.Foreground(tcell.ColorViolet).Background(tcell.ColorBlack),
 	token.LEN:            tcell.StyleDefault.Foreground(tcell.ColorViolet).Background(tcell.ColorBlack),
 	token.RETURN:         tcell.StyleDefault.Foreground(tcell.ColorViolet).Background(tcell.ColorBlack),
+	token.TRUE:           tcell.StyleDefault.Foreground(tcell.ColorViolet).Background(tcell.ColorBlack),
+	token.FALSE:          tcell.StyleDefault.Foreground(tcell.ColorViolet).Background(tcell.ColorBlack),
 	token.RETURN_TYPE:    tcell.StyleDefault.Foreground(tcell.NewRGBColor(255, 205, 255)).Background(tcell.ColorBlack),
+	token.PARAM_TYPE:     tcell.StyleDefault.Foreground(tcell.NewRGBColor(112, 151, 255)).Background(tcell.ColorBlack),
 	token.FUNC_NAME:      tcell.StyleDefault.Foreground(tcell.NewRGBColor(0, 255, 255)).Background(tcell.ColorBlack),
 	token.FUNC_CALL:      tcell.StyleDefault.Foreground(tcell.ColorTurquoise).Background(tcell.ColorBlack),
 	token.DBL_QUOTE:      tcell.StyleDefault.Foreground(tcell.ColorPaleGreen).Background(tcell.ColorBlack),
@@ -68,7 +71,7 @@ var styles = map[string]tcell.Style{
 	token.INT_LITERAL:    tcell.StyleDefault.Foreground(tcell.ColorYellow).Background(tcell.ColorBlack),
 	token.IMPORT:         tcell.StyleDefault.Foreground(tcell.ColorMediumTurquoise).Background(tcell.ColorBlack),
 	token.PACKAGE:        tcell.StyleDefault.Foreground(tcell.ColorMediumTurquoise).Background(tcell.ColorBlack),
-	token.IDENT:          tcell.StyleDefault.Foreground(tcell.NewRGBColor(105, 186, 255)).Background(tcell.ColorBlack),
+	token.IDENT:          tcell.StyleDefault.Foreground(tcell.NewRGBColor(105, 215, 255)).Background(tcell.ColorBlack),
 	token.TYPE_NONE:      tcell.StyleDefault.Foreground(tcell.ColorWhite).Background(tcell.ColorBlack),
 }
 

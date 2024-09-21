@@ -194,6 +194,8 @@ func LookupIdent(ident string, context TokenType) TokenType {
 		return FUNC_NAME
 	case START_PARAMS:
 		return PARAM_NAME
+	case PARAM_NAME:
+		return PARAM_TYPE
 	case STRUCT:
 		return FIELD_NAME
 	case MAP_BODY:
