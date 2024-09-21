@@ -57,7 +57,10 @@ func (d *Display) SetBufWindow() {
 }
 
 func (d *Display) windowAtBottom() bool {
-	return d.bufWindow.lines[Cur.Y] == d.ActiveBuf.lastLine()
+	if d.ActiveBuf.length() < d.bufWindow.size {
+		return true
+	}
+	return d.bufWindow.lastLine() == d.ActiveBuf.lastLine()
 }
 
 func (d *Display) InitBufWindow() {
