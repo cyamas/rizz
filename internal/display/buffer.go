@@ -12,12 +12,14 @@ type Buffer struct {
 	content     *LineArray
 	path        string
 	windowStart int
+	history     *History
 	highlighter *highlighter.Highlighter
 }
 
 func NewBuffer(h *highlighter.Highlighter) *Buffer {
 	return &Buffer{
 		content:     newLineArray(h),
+		history:     NewHistory(),
 		highlighter: h,
 	}
 }
@@ -80,16 +82,18 @@ func (b *Buffer) writeToFile() {
 	}
 }
 
+/*
 func (b *Buffer) addRune(r rune) {
 	line := b.getLine(bufPos.Y)
 	line.runes = append(line.runes, ' ')
 	copy(line.runes[bufPos.X+1:], line.runes[bufPos.X:])
 	line.runes[bufPos.X] = r
-}
+}*/
 
 func (b *Buffer) removeRune() {
 	line := b.getLine(bufPos.Y)
 	r := line.runes[bufPos.X]
+	ogRunes := line.Runes()
 	switch {
 	case r == '\t':
 		line.removeTabRunes()
@@ -98,6 +102,7 @@ func (b *Buffer) removeRune() {
 	default:
 		line.runes = append(line.runes[:bufPos.X], line.runes[bufPos.X+1:]...)
 	}
+	b.history.AddEvent(REMOVE, ogRunes, line)
 }
 
 func (b *Buffer) length() int {

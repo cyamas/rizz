@@ -90,12 +90,18 @@ func (l *Lexer) NextToken() token.Token {
 		}
 		tok = newToken(token.RPAREN, l.ch, l.position, 1)
 	case ',':
+		if l.Context() == token.PARAM_NAME {
+			l.ReplaceContext(token.START_PARAMS)
+		}
 		tok = newToken(token.COMMA, l.ch, l.position, 1)
 	case '+':
 		tok = newToken(token.PLUS, l.ch, l.position, 1)
 	case '-':
 		tok = newToken(token.MINUS, l.ch, l.position, 1)
 	case '*':
+		if l.Context() == token.PARAM_NAME {
+			tok = newToken(token.POINTER, l.ch, l.position, 1)
+		}
 		tok = newToken(token.ASTERISK, l.ch, l.position, 1)
 	case '/':
 		tok = newToken(token.SLASH, l.ch, l.position, 1)
@@ -183,6 +189,9 @@ func (l *Lexer) NextToken() token.Token {
 			l.AddContext(token.START_IMPORT_NAME)
 		case token.START_IMPORT_NAME:
 			l.RemoveContext()
+			if l.Context() == token.START_SINGLE_IMPORT {
+				l.RemoveContext()
+			}
 		case token.DBL_QUOTE:
 			l.RemoveContext()
 		default:
@@ -210,6 +219,9 @@ func (l *Lexer) NextToken() token.Token {
 			if l.Context() == token.ASSIGN {
 				l.RemoveContext()
 			}
+			if l.Context() == token.START_IMPORT_NAME {
+				return l.createImportName()
+			}
 			start := l.position
 			tok.SetIndex(start)
 			tok.Literal = l.readIdentifier()
@@ -228,8 +240,6 @@ func (l *Lexer) NextToken() token.Token {
 				} else {
 					l.AddContext(token.SINGLE_IMPORT)
 				}
-			case token.IMPORT_NAME:
-				l.RemoveContext()
 			case token.ARRAY_TYPE:
 				if l.peekChar() == 0 {
 					l.RemoveContext()
@@ -256,7 +266,7 @@ func (l *Lexer) NextToken() token.Token {
 			case token.FUNC_NAME:
 				l.ReplaceContext(token.START_PARAMS)
 			case token.PARAM_NAME:
-				if isLetter(l.peekChar()) {
+				if isLetter(l.peekChar()) || l.peekChar() == '*' {
 					l.AddContext(token.PARAM_NAME)
 				}
 			case token.PARAM_TYPE:
@@ -327,6 +337,18 @@ func (l *Lexer) createStringKeyToken() token.Token {
 	tok.SetIndex(start)
 	tok.SetLength(length)
 	l.AddContext(token.KEY)
+	return tok
+}
+
+func (l *Lexer) createImportName() token.Token {
+	tok := token.Token{Type: token.IMPORT_NAME, StartIndex: l.position}
+	literal := ""
+	for l.ch != '"' {
+		literal += string(l.ch)
+		l.readChar()
+	}
+	tok.Literal = literal
+	tok.Length = l.position - tok.StartIndex
 	return tok
 }
 

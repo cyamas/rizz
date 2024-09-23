@@ -19,6 +19,7 @@ const (
 	Write
 	Delete
 	New
+	Event
 )
 
 const LeftMarginSize = 8
@@ -31,6 +32,7 @@ var modes = map[int]string{
 	Write:  "Write",
 	Delete: "Delete",
 	New:    "New",
+	Event:  "Event",
 }
 
 type cell struct {
@@ -44,13 +46,12 @@ var bufPos cell
 
 func (d *Display) SetBufWindow() {
 	window := d.bufWindow
-	Cur.X = LeftMarginSize
 	for y, line := range window.lines {
 		if line == nil {
 			continue
 		}
 		for j, r := range line.runes {
-			x := Cur.X + j
+			x := LeftMarginSize + j
 			d.Screen.SetContent(x, y, r, nil, line.getRuneStyle(j))
 		}
 	}
@@ -140,15 +141,44 @@ func (d *Display) Run() {
 			d.runNewMode(ev)
 		case d.Mode == Delete:
 			d.runDeleteMode(ev)
+		case d.Mode == Event:
+			d.runEventMode(ev)
 		}
 	}
 
+}
+
+func (d *Display) runEventMode(ev tcell.Event) {
+	switch ev := ev.(type) {
+	case *tcell.EventKey:
+		switch {
+		case ev.Rune() == 'u':
+			d.undoLastEvent()
+		case ev.Rune() == 'r':
+			d.redoLastEvent()
+		}
+	}
+	d.Mode = Normal
+}
+
+func (d *Display) undoLastEvent() {
+	d.clearBufWindow()
+	d.ActiveBuf.history.AddEvent(UNDO, nil, nil)
+	d.SetBufWindow()
+}
+
+func (d *Display) redoLastEvent() {
+	d.clearBufWindow()
+	d.ActiveBuf.history.AddEvent(REDO, nil, nil)
+	d.SetBufWindow()
 }
 
 func (d *Display) runDeleteMode(ev tcell.Event) {
 	switch ev := ev.(type) {
 	case *tcell.EventKey:
 		switch {
+		case ev.Key() == tcell.KeyCtrlN:
+			d.Mode = Normal
 		case ev.Rune() == 'l':
 			d.deleteLine()
 			d.Mode = Normal
@@ -198,6 +228,8 @@ func (d *Display) runNewMode(ev tcell.Event) {
 	switch ev := ev.(type) {
 	case *tcell.EventKey:
 		switch {
+		case ev.Key() == tcell.KeyCtrlN:
+			d.Mode = Normal
 		case ev.Rune() == 'l':
 			d.insertBlankLine()
 		}
@@ -262,6 +294,8 @@ func (d *Display) runNormalMode(ev tcell.Event) {
 			d.Mode = New
 		case 'd':
 			d.Mode = Delete
+		case 'e':
+			d.Mode = Event
 		}
 	}
 }
@@ -644,6 +678,7 @@ func (d *Display) setRune(r rune) {
 	}
 
 	d.clearCurrLine()
+	ogRunes := d.currLine().Runes()
 	d.currLine().addRune(r)
 	prevLine, ok := d.prevLine()
 	if !ok {
@@ -664,6 +699,7 @@ func (d *Display) setRune(r rune) {
 		}
 		d.reRenderLine(Cur.Y)
 	}
+	d.ActiveBuf.history.AddEvent(ADD, ogRunes, d.currLine())
 }
 
 func (d *Display) prevLine() (*Line, bool) {

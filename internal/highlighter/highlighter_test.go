@@ -28,7 +28,7 @@ func TestParseLine(t *testing.T) {
 		{Type: token.PARAM_NAME, Literal: "x", StartIndex: 9, Length: 1},
 		{Type: token.COMMA, Literal: ",", StartIndex: 10, Length: 1},
 		{Type: token.PARAM_NAME, Literal: "y", StartIndex: 12, Length: 1},
-		{Type: token.INT, Literal: "int", StartIndex: 14, Length: 3},
+		{Type: token.PARAM_TYPE, Literal: "int", StartIndex: 14, Length: 3},
 		{Type: token.RPAREN, Literal: ")", StartIndex: 17, Length: 1},
 		{Type: token.RETURN_TYPE, Literal: "int", StartIndex: 19, Length: 3},
 		{Type: token.LBRACE, Literal: "{", StartIndex: 23, Length: 1},
@@ -153,7 +153,7 @@ func TestParseLine(t *testing.T) {
 
 	input17 := "fl64 = 1.002"
 	expTokens17 := []token.Token{
-		{Type: token.IDENT, Literal: "fl64", StartIndex: 0, Length: 4},
+		{Type: token.VAR_CALL, Literal: "fl64", StartIndex: 0, Length: 4},
 		{Type: token.ASSIGN, Literal: "=", StartIndex: 5, Length: 1},
 		{Type: token.FLOAT_LITERAL, Literal: "1.002", StartIndex: 7, Length: 5},
 	}
@@ -171,14 +171,18 @@ func TestParseLine(t *testing.T) {
 	}
 	ctx18 := []token.TokenType{token.TYPE_NONE}
 
-	input19 := "make interface any uint8 package import"
+	input19 := "make interface any uint8 package main import \"fmt\""
 	expTokens19 := []token.Token{
 		{Type: token.MAKE, Literal: "make", StartIndex: 0, Length: 4},
 		{Type: token.INTERFACE, Literal: "interface", StartIndex: 5, Length: 9},
 		{Type: token.ANY, Literal: "any", StartIndex: 15, Length: 3},
 		{Type: token.UINT_8, Literal: "uint8", StartIndex: 19, Length: 5},
 		{Type: token.PACKAGE, Literal: "package", StartIndex: 25, Length: 7},
-		{Type: token.IMPORT, Literal: "import", StartIndex: 33, Length: 6},
+		{Type: token.PACKAGE_NAME, Literal: "main", StartIndex: 33, Length: 4},
+		{Type: token.IMPORT, Literal: "import", StartIndex: 38, Length: 6},
+		{Type: token.DBL_QUOTE, Literal: "\"", StartIndex: 45, Length: 1},
+		{Type: token.IMPORT_NAME, Literal: "fmt", StartIndex: 46, Length: 3},
+		{Type: token.DBL_QUOTE, Literal: "\"", StartIndex: 49, Length: 1},
 	}
 	ctx19 := []token.TokenType{token.TYPE_NONE}
 
@@ -219,6 +223,35 @@ func TestParseLine(t *testing.T) {
 	}
 	ctx22 := []token.TokenType{token.TYPE_NONE}
 
+	input23 := "import ("
+	expTokens23 := []token.Token{
+		{Type: token.IMPORT, Literal: "import", StartIndex: 0, Length: 6},
+		{Type: token.LPAREN, Literal: "(", StartIndex: 7, Length: 1},
+	}
+	ctx23 := []token.TokenType{token.TYPE_NONE, token.MULTI_IMPORT}
+
+	input24 := `"os"`
+	expTokens24 := []token.Token{
+		{Type: token.DBL_QUOTE, Literal: "\"", StartIndex: 0, Length: 1},
+		{Type: token.IMPORT_NAME, Literal: "os", StartIndex: 1, Length: 2},
+		{Type: token.DBL_QUOTE, Literal: "\"", StartIndex: 3, Length: 1},
+	}
+	ctx24 := []token.TokenType{token.TYPE_NONE, token.MULTI_IMPORT}
+
+	input25 := `display "github.com/cyamas/rizz/internal/display"`
+	expTokens25 := []token.Token{
+		{Type: token.IMPORT_ALIAS, Literal: "display", StartIndex: 0, Length: 7},
+		{Type: token.DBL_QUOTE, Literal: "\"", StartIndex: 8, Length: 1},
+		{Type: token.IMPORT_NAME, Literal: "github.com/cyamas/rizz/internal/display", StartIndex: 9, Length: 39},
+		{Type: token.DBL_QUOTE, Literal: "\"", StartIndex: 48, Length: 1}}
+	ctx25 := []token.TokenType{token.TYPE_NONE, token.MULTI_IMPORT}
+
+	input26 := ")"
+	expTokens26 := []token.Token{
+		{Type: token.RPAREN, Literal: ")", StartIndex: 0, Length: 1},
+	}
+	ctx26 := []token.TokenType{token.TYPE_NONE, token.MULTI_IMPORT}
+
 	tests := []struct {
 		input      string
 		context    []token.TokenType
@@ -247,6 +280,10 @@ func TestParseLine(t *testing.T) {
 		{input20, ctx20, expTokens20, token.TYPE_NONE},
 		{input21, ctx21, expTokens21, token.TYPE_NONE},
 		{input22, ctx22, expTokens22, token.TYPE_NONE},
+		{input23, ctx23, expTokens23, token.MULTI_IMPORT},
+		{input24, ctx24, expTokens24, token.MULTI_IMPORT},
+		{input25, ctx25, expTokens25, token.MULTI_IMPORT},
+		{input26, ctx26, expTokens26, token.TYPE_NONE},
 	}
 
 	var currTok token.Token

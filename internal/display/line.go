@@ -18,6 +18,14 @@ func newLine(h *highlighter.Highlighter) *Line {
 	return line
 }
 
+func (l *Line) SetRunes(runes []rune) {
+	l.runes = runes
+}
+
+func (l *Line) Runes() []rune {
+	return append([]rune(nil), l.runes...)
+}
+
 func (l *Line) highlight(ctx []token.TokenType) {
 	if len(ctx) == 0 {
 		ctx = []token.TokenType{token.TYPE_NONE}
@@ -67,11 +75,13 @@ var styles = map[string]tcell.Style{
 	token.STRING_LITERAL: tcell.StyleDefault.Foreground(tcell.ColorPaleGreen).Background(tcell.ColorBlack),
 	token.IMPORT_NAME:    tcell.StyleDefault.Foreground(tcell.ColorPaleGreen).Background(tcell.ColorBlack),
 	token.IMPORT_CALL:    tcell.StyleDefault.Foreground(tcell.ColorPaleTurquoise).Background(tcell.ColorBlack),
+	token.IMPORT_ALIAS:   tcell.StyleDefault.Foreground(tcell.ColorPaleTurquoise).Background(tcell.ColorBlack),
 	token.TYPE_NAME:      tcell.StyleDefault.Foreground(tcell.NewRGBColor(0, 255, 255)).Background(tcell.ColorBlack),
 	token.INT_LITERAL:    tcell.StyleDefault.Foreground(tcell.ColorYellow).Background(tcell.ColorBlack),
 	token.IMPORT:         tcell.StyleDefault.Foreground(tcell.ColorMediumTurquoise).Background(tcell.ColorBlack),
 	token.PACKAGE:        tcell.StyleDefault.Foreground(tcell.ColorMediumTurquoise).Background(tcell.ColorBlack),
 	token.IDENT:          tcell.StyleDefault.Foreground(tcell.NewRGBColor(105, 215, 255)).Background(tcell.ColorBlack),
+	token.POINTER:        tcell.StyleDefault.Foreground(tcell.ColorWhite).Background(tcell.ColorBlack),
 	token.TYPE_NONE:      tcell.StyleDefault.Foreground(tcell.ColorWhite).Background(tcell.ColorBlack),
 }
 

@@ -72,6 +72,8 @@ const (
 	BYTE      = "BYTE"
 	TYPE_NONE = "TYPENONE"
 
+	POINTER = "POINTER"
+
 	TYPE_NAME = "TYPENAME"
 	TYPE_TYPE = "TYPE_TYPE"
 	TYPE_CALL = "TYPECALL"
@@ -152,6 +154,8 @@ var keywords = map[string]TokenType{
 func LookupIdent(ident string, context TokenType) TokenType {
 	if tok, ok := keywords[ident]; ok {
 		switch context {
+		case FUNC_DECLARE:
+			return FUNC_NAME
 		case PACKAGE:
 			return PACKAGE_NAME
 		case DBL_QUOTE:
